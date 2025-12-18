@@ -1,0 +1,132 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Postgraduate Education Center 
+model PGT_User {
+  id                Int                 @id @default(autoincrement())
+  email             String              @unique
+  fnameTh           String
+  fnameEn           String
+  lnameTh           String
+  lnameEn           String
+  ethnicity         String //เชื้อชาติ
+  county            String // จังหวัด
+  zipcode           String
+  prefix            String
+  nationality       String
+  sex               String
+  idCard            String              @unique
+  address           String
+  parish            String // ตำบล
+  district          String
+  schoolEnd         String?
+  schoolYear        String?
+  worklocaltion     String?
+  workaddress       String
+  phone             String
+  lineId            String?
+  foodtype          String
+  certName          String?
+  hdb               String
+  pwd               String
+  pdpa              String
+  role              String
+  codeId            String              @unique
+  cecode            String?
+  admp              String?
+  createdAt         DateTime
+  updatedAt         DateTime
+  PGT_title_Project PGT_title_Project[]
+   PGT_CheckIn       PGT_CheckIn[]
+  PGT_Send_Receipt  PGT_Send_Receipt[]
+}
+
+model PGT_Register_Project {
+  id                Int                 @id @default(autoincrement())
+  title             String
+  subtitle          String
+  detail            String
+  image             String
+  count_regi        Int
+  price_regi        Int
+  discount          String
+  open_regi         DateTime            @default(now())
+  close_regi        DateTime
+  createdAt         DateTime
+  updatedAt         DateTime
+  PGT_title_Project PGT_title_Project[]
+    PGT_CheckIn       PGT_CheckIn[]
+  PGT_Send_Receipt  PGT_Send_Receipt[]
+}
+
+model PGT_title_Project {
+  id                   Int                  @id @default(autoincrement())
+  userId               String
+  pgt_user             PGT_User             @relation(fields: [userId], references: [codeId])
+  titleId              Int
+  pgt_register_project PGT_Register_Project @relation(fields: [titleId], references: [id])
+  transferSlip         String?
+  sentTransferSlip     String @default("pending")            
+  remaker              String?
+  createdAt            DateTime?
+  autodate_cancel      DateTime?
+  W_updatedAt          DateTime?
+  S_updatedAt          DateTime?
+  F_updatedAt          DateTime?
+}
+
+// เจ้าหน้าที่
+
+model PGT_Staff_Create {
+  id                Int               @id @default(autoincrement())
+  fname             String
+  email             String            @unique
+  pwd               String
+  codeId            String
+  Pgt_Staff_Gencode PGT_Staff_Gencode @relation(fields: [codeId], references: [gencode])
+}
+
+model PGT_Staff_Gencode {
+  id               Int                @id @default(autoincrement())
+  gencode          String             @unique
+  name             String
+  sentCode         Int                @default(0)
+  openCode         Int                @default(0)
+  agencyId         Int
+  Pgt_Staff_Agency PGT_Staff_Agency   @relation(fields: [agencyId], references: [id])
+  PGT_Staff_Create PGT_Staff_Create[]
+  createdAt DateTime?
+  approvedate DateTime?
+}
+
+model PGT_Staff_Agency {
+  id                Int                 @id @default(autoincrement())
+  agency            String
+  PGT_Staff_Gencode PGT_Staff_Gencode[]
+}
+
+model PGT_CheckIn {
+  id                   Int                  @id @default(autoincrement())
+  userId               String
+  pgt_user             PGT_User             @relation(fields: [userId], references: [codeId])
+  titleId              Int
+  pgt_register_project PGT_Register_Project @relation(fields: [titleId], references: [id])
+  dateCheckin          String?
+  timeCheckin          String?
+}
+
+model PGT_Send_Receipt {
+  id                   Int                  @id @default(autoincrement())
+  userId               String
+  pgt_user             PGT_User             @relation(fields: [userId], references: [codeId])
+  titleId              Int
+  pgt_register_project PGT_Register_Project @relation(fields: [titleId], references: [id])
+  dateSend             String
+  timeSend             String
+}
