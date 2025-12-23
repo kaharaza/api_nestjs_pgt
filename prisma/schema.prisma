@@ -40,13 +40,15 @@ model PGT_User {
   codeId            String              @unique
   cecode            String?
   admp              String?
+  points            Int? @default(0)
   createdAt         DateTime
   updatedAt         DateTime
   PGT_title_Project PGT_title_Project[]
-   PGT_CheckIn       PGT_CheckIn[]
+  PGT_CheckIn       PGT_CheckIn[]
   PGT_Send_Receipt  PGT_Send_Receipt[]
 }
 
+// /*------ CREATE PROJECTS -------*/
 model PGT_Register_Project {
   id                Int                 @id @default(autoincrement())
   title             String
@@ -61,10 +63,11 @@ model PGT_Register_Project {
   createdAt         DateTime
   updatedAt         DateTime
   PGT_title_Project PGT_title_Project[]
-    PGT_CheckIn       PGT_CheckIn[]
+  PGT_CheckIn       PGT_CheckIn[]
   PGT_Send_Receipt  PGT_Send_Receipt[]
 }
 
+// /*------ TITLE PROJECTS -------*/
 model PGT_title_Project {
   id                   Int                  @id @default(autoincrement())
   userId               String
@@ -81,8 +84,60 @@ model PGT_title_Project {
   F_updatedAt          DateTime?
 }
 
-// เจ้าหน้าที่
+// /*------ CHECKIN -------*/
+model PGT_CheckIn {
+  id                   Int                  @id @default(autoincrement())
+  userId               String
+  pgt_user             PGT_User             @relation(fields: [userId], references: [codeId])
+  titleId              Int
+  pgt_register_project PGT_Register_Project @relation(fields: [titleId], references: [id])
+  dateCheckin          String?
+  timeCheckin          String?
+}
 
+model PGT_Send_Receipt {
+  id                   Int                  @id @default(autoincrement())
+  userId               String
+  pgt_user             PGT_User             @relation(fields: [userId], references: [codeId])
+  titleId              Int
+  pgt_register_project PGT_Register_Project @relation(fields: [titleId], references: [id])
+  dateSend             String
+  timeSend             String
+}
+
+// /*------ CMUITACCOUNT -------*/
+enum Role {
+  USER
+  FINANCE
+  SUB
+  STAFF
+  ADMIN
+}
+
+enum Permission {
+  READ
+  CREATE
+  EDIT
+  DELETE
+  FINANCE
+  ADMINISTRATION
+  ACTIVE
+}
+
+model CmuItAccount {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String
+  email       String   @unique
+  role        Role     @default(USER)
+  permissions Permission[] @default([]) // เก็บเป็น array ของ string เช่น ["อ่าน", "สร้าง", "แก้ไข", "ลบ", "หน่วย เช่น การเงิน, ธุรการ, พัสดุ", "สถานะการทำงาน"]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("cmu_it_accounts")
+}
+
+
+// /*--ไม่ใช่แล้ว---*/
 model PGT_Staff_Create {
   id                Int               @id @default(autoincrement())
   fname             String
@@ -110,23 +165,4 @@ model PGT_Staff_Agency {
   agency            String
   PGT_Staff_Gencode PGT_Staff_Gencode[]
 }
-
-model PGT_CheckIn {
-  id                   Int                  @id @default(autoincrement())
-  userId               String
-  pgt_user             PGT_User             @relation(fields: [userId], references: [codeId])
-  titleId              Int
-  pgt_register_project PGT_Register_Project @relation(fields: [titleId], references: [id])
-  dateCheckin          String?
-  timeCheckin          String?
-}
-
-model PGT_Send_Receipt {
-  id                   Int                  @id @default(autoincrement())
-  userId               String
-  pgt_user             PGT_User             @relation(fields: [userId], references: [codeId])
-  titleId              Int
-  pgt_register_project PGT_Register_Project @relation(fields: [titleId], references: [id])
-  dateSend             String
-  timeSend             String
-}
+// /*--ไม่ใช่แล้ว---*/
