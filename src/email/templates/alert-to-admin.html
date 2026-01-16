@@ -1,0 +1,816 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>แจ้งเตือนมีผู้สมัครโครงการ {{projectName}}</title>
+    <!-- Outlook specific fixes -->
+    <!--[if mso]>
+      <style type="text/css">
+        .body-outlook {
+          width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        .email-container-outlook {
+          width: 600px !important;
+          margin: 0 auto !important;
+        }
+        table {
+          border-collapse: collapse;
+          mso-table-lspace: 0pt;
+          mso-table-rspace: 0pt;
+        }
+        td {
+          font-family: Arial, sans-serif !important;
+        }
+        .header-bg {
+          background-color: #1e40af !important;
+        }
+        .project-bg {
+          background-color: #eff6ff !important;
+        }
+        .action-bg {
+          background-color: #f0f9ff !important;
+        }
+        .footer-bg {
+          background-color: #1e293b !important;
+        }
+      </style>
+    <![endif]-->
+    <style type="text/css">
+      /* Reset for email clients */
+      body {
+        margin: 0;
+        padding: 20px;
+        font-family: Arial, sans-serif;
+        line-height: 1.6;
+        color: #333333;
+        background-color: #f9f9f9;
+      }
+
+      /* Main container */
+      .email-container {
+        max-width: 600px;
+        margin: 0 auto;
+        background-color: #ffffff;
+        border: 1px solid #dddddd;
+        border-radius: 4px;
+      }
+
+      /* Header - Fixed for Outlook */
+      .header {
+        background-color: #1e40af;
+        color: #ffffff;
+        padding: 30px 20px;
+        text-align: center;
+        border-bottom: 3px solid #f59e0b;
+      }
+
+      .header h1 {
+        font-size: 24px;
+        font-weight: bold;
+        margin: 0 0 10px 0;
+        color: #ffffff;
+      }
+
+      .header p {
+        font-size: 16px;
+        margin: 0;
+        color: #ffffff;
+        opacity: 0.9;
+      }
+
+      .notification-badge {
+        display: inline-block;
+        background-color: #f59e0b;
+        color: #ffffff;
+        padding: 6px 16px;
+        border-radius: 20px;
+        font-weight: bold;
+        font-size: 14px;
+        margin-bottom: 20px;
+      }
+
+      /* Content */
+      .content {
+        padding: 30px 20px;
+      }
+
+      /* Project Info */
+      .project-info {
+        background-color: #eff6ff;
+        border: 2px solid #3b82f6;
+        padding: 20px;
+        margin-bottom: 25px;
+        border-radius: 4px;
+      }
+
+      .project-name {
+        display: table;
+        width: 100%;
+        margin-bottom: 15px;
+      }
+
+      .project-icon {
+        display: table-cell;
+        width: 40px;
+        vertical-align: middle;
+        text-align: center;
+        font-size: 20px;
+      }
+
+      .project-name h2 {
+        display: table-cell;
+        vertical-align: middle;
+        font-size: 18px;
+        font-weight: bold;
+        color: #1e40af;
+        margin: 0;
+        padding-left: 10px;
+      }
+
+      /* Applicant Info */
+      .section-title {
+        font-size: 18px;
+        font-weight: bold;
+        color: #374151;
+        margin: 25px 0 15px 0;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #e5e7eb;
+      }
+
+      /* Info Table for Outlook compatibility */
+      .info-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 25px;
+      }
+
+      .info-row {
+        border-bottom: 1px solid #eeeeee;
+      }
+
+      .info-row:last-child {
+        border-bottom: none;
+      }
+
+      .info-label {
+        padding: 12px 0;
+        font-size: 14px;
+        color: #666666;
+        width: 35%;
+        vertical-align: top;
+      }
+
+      .info-value {
+        padding: 12px 0 12px 10px;
+        font-size: 16px;
+        color: #333333;
+        font-weight: bold;
+        vertical-align: top;
+      }
+
+      /* Pricing Section */
+      .pricing-section {
+        background-color: #f0f9ff;
+        border: 2px solid #38bdf8;
+        padding: 20px;
+        margin: 25px 0;
+        border-radius: 4px;
+      }
+
+      .pricing-header {
+        font-size: 18px;
+        font-weight: bold;
+        color: #0369a1;
+        margin-bottom: 15px;
+        display: table;
+        width: 100%;
+      }
+
+      .pricing-icon {
+        display: table-cell;
+        width: 40px;
+        vertical-align: middle;
+        text-align: center;
+        font-size: 20px;
+      }
+
+      .pricing-header h3 {
+        display: table-cell;
+        vertical-align: middle;
+        margin: 0;
+        padding-left: 10px;
+      }
+
+      .price-display {
+        background-color: #ffffff;
+        border: 1px solid #e5e7eb;
+        padding: 15px;
+        border-radius: 4px;
+        text-align: center;
+      }
+
+      .price-label {
+        font-size: 14px;
+        color: #666666;
+        margin-bottom: 5px;
+      }
+
+      .price-value {
+        font-size: 20px;
+        font-weight: bold;
+        color: #1e40af;
+      }
+
+      /* Action Section */
+      .action-section {
+        background-color: #f0f9ff;
+        border: 2px solid #3b82f6;
+        padding: 25px;
+        margin: 30px 0;
+        text-align: center;
+        border-radius: 4px;
+      }
+
+      .action-title {
+        font-size: 18px;
+        font-weight: bold;
+        color: #1e40af;
+        margin-bottom: 15px;
+      }
+
+      .action-button {
+        display: inline-block;
+        background-color: #3b82f6;
+        color: #ffffff;
+        text-decoration: none;
+        padding: 12px 30px;
+        font-size: 16px;
+        font-weight: bold;
+        border-radius: 4px;
+        margin: 15px 0;
+      }
+
+      .website-link {
+        font-size: 14px;
+        color: #666666;
+        margin-top: 10px;
+        word-break: break-all;
+      }
+
+      /* Footer */
+      .footer {
+        background-color: #1e293b;
+        color: #ffffff;
+        padding: 30px 20px;
+        text-align: center;
+        border-top: 3px solid #f59e0b;
+      }
+
+      .footer-logo {
+        font-size: 18px;
+        font-weight: bold;
+        color: #fbbf24;
+        margin-bottom: 20px;
+        display: block;
+      }
+
+      .footer-contact {
+        font-size: 14px;
+        color: #cbd5e1;
+        margin: 15px 0;
+      }
+
+      .footer-contact span {
+        margin: 0 10px;
+      }
+
+      .copyright {
+        margin-top: 20px;
+        padding-top: 20px;
+        border-top: 1px solid #374151;
+        font-size: 12px;
+        color: #94a3b8;
+      }
+
+      /* Responsive */
+      @media only screen and (max-width: 600px) {
+        body {
+          padding: 10px;
+        }
+
+        .email-container {
+          border-radius: 0;
+        }
+
+        .header,
+        .content,
+        .footer {
+          padding-left: 15px;
+          padding-right: 15px;
+        }
+
+        .info-label,
+        .info-value {
+          display: block;
+          width: 100%;
+          padding: 8px 0;
+        }
+
+        .info-value {
+          padding-left: 0;
+          margin-bottom: 15px;
+        }
+
+        .action-button {
+          display: block;
+          width: 100%;
+          box-sizing: border-box;
+        }
+      }
+    </style>
+  </head>
+  <body
+    style="
+      margin: 0;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+      background-color: #f9f9f9;
+    "
+  >
+    <!--[if mso]>
+    <div class="body-outlook">
+    <![endif]-->
+
+    <div
+      class="email-container"
+      style="
+        max-width: 600px;
+        margin: 0 auto;
+        background-color: #ffffff;
+        border: 1px solid #dddddd;
+        border-radius: 4px;
+      "
+    >
+      <!-- Header -->
+      <div
+        class="header"
+        style="
+          background-color: #1e40af;
+          color: #ffffff;
+          padding: 30px 20px;
+          text-align: center;
+          border-bottom: 3px solid #f59e0b;
+        "
+      >
+        <div
+          class="notification-badge"
+          style="
+            display: inline-block;
+            background-color: #f59e0b;
+            color: #ffffff;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 14px;
+            margin-bottom: 20px;
+          "
+        >
+          แจ้งเตือนใหม่
+        </div>
+        <h1
+          style="
+            font-size: 24px;
+            font-weight: bold;
+            margin: 0 0 10px 0;
+            color: #ffffff;
+          "
+        >
+          มีผู้สมัครโครงการใหม่
+        </h1>
+        <p style="font-size: 16px; margin: 0; color: #ffffff; opacity: 0.9">
+          ระบบตรวจพบผู้สมัครใหม่ในโครงการ {{projectName}}
+        </p>
+      </div>
+
+      <!-- Content -->
+      <div class="content" style="padding: 30px 20px">
+        <!-- Project Info -->
+        <div
+          class="project-info"
+          style="
+            background-color: #eff6ff;
+            border: 2px solid #3b82f6;
+            padding: 20px;
+            margin-bottom: 25px;
+            border-radius: 4px;
+          "
+        >
+          <div class="project-name">
+            <div
+              class="project-icon"
+              style="
+                display: table-cell;
+                width: 40px;
+                vertical-align: middle;
+                text-align: center;
+                font-size: 20px;
+              "
+            >
+              📋
+            </div>
+            <h2
+              style="
+                display: table-cell;
+                vertical-align: middle;
+                font-size: 18px;
+                font-weight: bold;
+                color: #1e40af;
+                margin: 0;
+                padding-left: 10px;
+              "
+            >
+              {{projectName}}
+            </h2>
+          </div>
+          <p style="color: #1e40af; font-weight: bold; margin: 10px 0 0 0">
+            โครงการเปิดรับสมัคร
+          </p>
+        </div>
+
+        <!-- Applicant Info -->
+        <div
+          class="section-title"
+          style="
+            font-size: 18px;
+            font-weight: bold;
+            color: #374151;
+            margin: 25px 0 15px 0;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e5e7eb;
+          "
+        >
+          ข้อมูลผู้สมัคร
+        </div>
+
+        <table
+          class="info-table"
+          style="width: 100%; border-collapse: collapse; margin-bottom: 25px"
+        >
+          <tr class="info-row" style="border-bottom: 1px solid #eeeeee">
+            <td
+              class="info-label"
+              style="
+                padding: 12px 0;
+                font-size: 14px;
+                color: #666666;
+                width: 35%;
+                vertical-align: top;
+              "
+            >
+              👤 ชื่อผู้สมัคร
+            </td>
+            <td
+              class="info-value"
+              style="
+                padding: 12px 0 12px 10px;
+                font-size: 16px;
+                color: #333333;
+                font-weight: bold;
+                vertical-align: top;
+              "
+            >
+              {{fnameTh}} {{lnameTh}}
+            </td>
+          </tr>
+          <tr class="info-row" style="border-bottom: 1px solid #eeeeee">
+            <td
+              class="info-label"
+              style="
+                padding: 12px 0;
+                font-size: 14px;
+                color: #666666;
+                width: 35%;
+                vertical-align: top;
+              "
+            >
+              📅 วันที่สมัคร
+            </td>
+            <td
+              class="info-value"
+              style="
+                padding: 12px 0 12px 10px;
+                font-size: 16px;
+                color: #333333;
+                font-weight: bold;
+                vertical-align: top;
+              "
+            >
+              {{dateRegister}}
+            </td>
+          </tr>
+          <tr class="info-row" style="border-bottom: 1px solid #eeeeee">
+            <td
+              class="info-label"
+              style="
+                padding: 12px 0;
+                font-size: 14px;
+                color: #666666;
+                width: 35%;
+                vertical-align: top;
+              "
+            >
+              📞 เบอร์โทรศัพท์
+            </td>
+            <td
+              class="info-value"
+              style="
+                padding: 12px 0 12px 10px;
+                font-size: 16px;
+                color: #333333;
+                font-weight: bold;
+                vertical-align: top;
+              "
+            >
+              {{phone}}
+            </td>
+          </tr>
+          <tr class="info-row">
+            <td
+              class="info-label"
+              style="
+                padding: 12px 0;
+                font-size: 14px;
+                color: #666666;
+                width: 35%;
+                vertical-align: top;
+              "
+            >
+              ✉️ อีเมล
+            </td>
+            <td
+              class="info-value"
+              style="
+                padding: 12px 0 12px 10px;
+                font-size: 16px;
+                color: #333333;
+                font-weight: bold;
+                vertical-align: top;
+              "
+            >
+              {{email}}
+            </td>
+          </tr>
+        </table>
+
+        <!-- Registration Details -->
+        <div
+          class="section-title"
+          style="
+            font-size: 18px;
+            font-weight: bold;
+            color: #374151;
+            margin: 25px 0 15px 0;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e5e7eb;
+          "
+        >
+          รายละเอียดการสมัคร
+        </div>
+
+        <table
+          class="info-table"
+          style="width: 100%; border-collapse: collapse; margin-bottom: 25px"
+        >
+          <tr class="info-row" style="border-bottom: 1px solid #eeeeee">
+            <td
+              class="info-label"
+              style="
+                padding: 12px 0;
+                font-size: 14px;
+                color: #666666;
+                width: 35%;
+                vertical-align: top;
+              "
+            >
+              🏷️ ประเภทการสมัคร
+            </td>
+            <td
+              class="info-value"
+              style="
+                padding: 12px 0 12px 10px;
+                font-size: 16px;
+                color: #333333;
+                font-weight: bold;
+                vertical-align: top;
+              "
+            >
+              {{typeRegister}}
+            </td>
+          </tr>
+          <tr class="info-row">
+            <td
+              class="info-label"
+              style="
+                padding: 12px 0;
+                font-size: 14px;
+                color: #666666;
+                width: 35%;
+                vertical-align: top;
+              "
+            >
+              📝 รายละเอียดการสมัคร
+            </td>
+            <td
+              class="info-value"
+              style="
+                padding: 12px 0 12px 10px;
+                font-size: 16px;
+                color: #333333;
+                font-weight: bold;
+                vertical-align: top;
+              "
+            >
+              {{pricingTier}}
+            </td>
+          </tr>
+        </table>
+
+        <!-- Pricing Section -->
+        <div
+          class="pricing-section"
+          style="
+            background-color: #f0f9ff;
+            border: 2px solid #38bdf8;
+            padding: 20px;
+            margin: 25px 0;
+            border-radius: 4px;
+          "
+        >
+          <div class="pricing-header">
+            <div
+              class="pricing-icon"
+              style="
+                display: table-cell;
+                width: 40px;
+                vertical-align: middle;
+                text-align: center;
+                font-size: 20px;
+              "
+            >
+              💰
+            </div>
+            <h3
+              style="
+                display: table-cell;
+                vertical-align: middle;
+                margin: 0;
+                padding-left: 10px;
+                font-size: 18px;
+                font-weight: bold;
+                color: #0369a1;
+              "
+            >
+              ข้อมูลราคา
+            </h3>
+          </div>
+          <div
+            class="price-display"
+            style="
+              background-color: #ffffff;
+              border: 1px solid #e5e7eb;
+              padding: 15px;
+              border-radius: 4px;
+              text-align: center;
+            "
+          >
+            <div
+              class="price-label"
+              style="font-size: 14px; color: #666666; margin-bottom: 5px"
+            >
+              ราคาที่ชำระ
+            </div>
+            <div
+              class="price-value"
+              style="font-size: 20px; font-weight: bold; color: #1e40af"
+            >
+              {{price}} บาท
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Section -->
+        <div
+          class="action-section"
+          style="
+            background-color: #f0f9ff;
+            border: 2px solid #3b82f6;
+            padding: 25px;
+            margin: 30px 0;
+            text-align: center;
+            border-radius: 4px;
+          "
+        >
+          <div
+            class="action-title"
+            style="
+              font-size: 18px;
+              font-weight: bold;
+              color: #1e40af;
+              margin-bottom: 15px;
+            "
+          >
+            ตรวจสอบสถานะการสมัคร
+          </div>
+          <p style="color: #374151; margin-bottom: 20px; font-size: 16px">
+            สามารถตรวจสอบสถานะการสมัครและข้อมูลเพิ่มเติมได้ที่ระบบจัดการ
+          </p>
+          <a
+            href="https://pgt.vet.cmu.ac.th"
+            class="action-button"
+            style="
+              display: inline-block;
+              background-color: #3b82f6;
+              color: #ffffff;
+              text-decoration: none;
+              padding: 12px 30px;
+              font-size: 16px;
+              font-weight: bold;
+              border-radius: 4px;
+              margin: 15px 0;
+            "
+            target="_blank"
+          >
+            เข้าสู่ระบบจัดการโครงการ
+          </a>
+          <div
+            class="website-link"
+            style="
+              font-size: 14px;
+              color: #666666;
+              margin-top: 10px;
+              word-break: break-all;
+            "
+          >
+            https://pgt.vet.cmu.ac.th
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div
+        class="footer"
+        style="
+          background-color: #1e293b;
+          color: #ffffff;
+          padding: 30px 20px;
+          text-align: center;
+          border-top: 3px solid #f59e0b;
+        "
+      >
+        <div
+          class="footer-logo"
+          style="
+            font-size: 18px;
+            font-weight: bold;
+            color: #fbbf24;
+            margin-bottom: 20px;
+            display: block;
+          "
+        >
+          คณะสัตวแพทยศาสตร์ มหาวิทยาลัยเชียงใหม่
+        </div>
+
+        <div
+          class="footer-contact"
+          style="font-size: 14px; color: #cbd5e1; margin: 15px 0"
+        >
+          <span>pgt.cmu@gmail.com</span> • <span>+66 5394 8095</span>
+        </div>
+
+        <p style="color: #94a3b8; font-size: 14px; margin: 10px 0">
+          239 ถนนห้วยแก้ว ตำบลสุเทพ อำเภอเมืองเชียงใหม่ 50200
+        </p>
+
+        <div
+          class="copyright"
+          style="
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #374151;
+            font-size: 12px;
+            color: #94a3b8;
+          "
+        >
+          © {{year}} Postgraduate Education Center. All rights reserved.
+        </div>
+      </div>
+    </div>
+
+    <!--[if mso]>
+    </div>
+    <![endif]-->
+  </body>
+</html>

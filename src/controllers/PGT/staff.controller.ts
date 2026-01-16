@@ -115,8 +115,6 @@ export class PGTStaffController {
           },
         });
 
-       
-
         return { success: true, gen: gentoken };
       }
     } catch (e) {
@@ -208,41 +206,41 @@ export class PGTStaffController {
     }
   }
 
-  @Post('login')
-  async login(@Body() admin: DataUser, @Req() req: Request) {
-    const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
-    try {
-      const userDate = await prisma.pGT_Staff_Create.findFirst({
-        where: {
-          email: admin.email,
-          pwd: admin.pwd,
-        },
-      });
-      if (userDate) {
-        const token = await this.authService.loginPgt(userDate);
-        this.logger.log(
-          `Successful login: \n - Name: ${userDate.fname} \n - Email: ${userDate.email} \n - CodeId: ${userDate.codeId} \n - IP: ${ip}`,
-        );
-        return { success: true, respCode: HttpStatus.OK, token: token };
-      }
+  // @Post('login')
+  // async login(@Body() admin: DataUser, @Req() req: Request) {
+  //   const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+  //   try {
+  //     const userDate = await prisma.pGT_Staff_Create.findFirst({
+  //       where: {
+  //         email: admin.email,
+  //         pwd: admin.pwd,
+  //       },
+  //     });
+  //     if (userDate) {
+  //       const token = await this.authService.loginPgt(userDate);
+  //       this.logger.log(
+  //         `Successful login: \n - Name: ${userDate.fname} \n - Email: ${userDate.email} \n - CodeId: ${userDate.codeId} \n - IP: ${ip}`,
+  //       );
+  //       return { success: true, respCode: HttpStatus.OK, token: token };
+  //     }
 
-      this.logger.error(
-        `Email or password invalid: \n - Email: ${admin.email} \n - IP: ${ip}`,
-      );
-      return {
-        success: false,
-        respCode: HttpStatus.BAD_REQUEST,
-        meg: 'Email or password invalid',
-      };
-    } catch (e) {
-      this.logger.error(`Error Create User: \n ${e} \n IP: ${ip}`);
-      throw new HttpException(
-        {
-          status: HttpStatus.INTERNAL_SERVER_ERROR,
-          error: 'An error Check code',
-        },
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
+  //     this.logger.error(
+  //       `Email or password invalid: \n - Email: ${admin.email} \n - IP: ${ip}`,
+  //     );
+  //     return {
+  //       success: false,
+  //       respCode: HttpStatus.BAD_REQUEST,
+  //       meg: 'Email or password invalid',
+  //     };
+  //   } catch (e) {
+  //     this.logger.error(`Error Create User: \n ${e} \n IP: ${ip}`);
+  //     throw new HttpException(
+  //       {
+  //         status: HttpStatus.INTERNAL_SERVER_ERROR,
+  //         error: 'An error Check code',
+  //       },
+  //       HttpStatus.INTERNAL_SERVER_ERROR,
+  //     );
+  //   }
+  // }
 }

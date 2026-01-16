@@ -1,0 +1,79 @@
+
+# =========================
+# Dockerfile (PROD for NestJS + Prisma)
+# =========================
+
+# --- Build stage ---
+FROM node:24-slim AS builder
+
+WORKDIR /app
+
+# Timezone + required packages
+RUN apt-get update -y \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+     tzdata openssl procps \
+  && ln -snf /usr/share/zoneinfo/Asia/Bangkok /etc/localtime \
+  && echo "Asia/Bangkok" > /etc/timezone \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
+
+ENV TZ=Asia/Bangkok
+
+# Install dependencies with caching
+COPY package*.json ./
+# ใช้ npm ci เพื่อ reproducible builds; ถ้ามี lockfile
+RUN npm ci
+
+# Copy source
+COPY . .
+
+# Prisma (ใช้ schema เพื่อ generate client)
+ARG DATABASE_URL
+ENV DATABASE_URL=${DATABASE_URL}
+RUN npx prisma generate
+
+# Build Nest (จะ copy assets ตาม nest-cli.json)
+RUN npm run build
+
+# --- Runtime stage ---
+FROM node:24-slim AS runner
+
+WORKDIR /app
+
+# Runtime packages & timezone
+RUN apt-get update -y \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+     tzdata openssl procps \
+  && ln -snf /usr/share/zoneinfo/Asia/Bangkok /etc/localtime \
+  && echo "Asia/Bangkok" > /etc/timezone \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
+
+ENV TZ=Asia/Bangkok
+ENV NODE_ENV=production
+
+# Copy only what's needed for runtime
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+# Copy built app + prisma client + necessary files
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/prisma ./prisma
+
+# Prisma needs DATABASE_URL at runtime too
+ARG DATABASE_URL
+ENV DATABASE_URL=${DATABASE_URL}
+
+# Optional: set a non-root user (security best practice)
+RUN adduser --disabled-password --gecos "" appuser
+USER appuser
+
+EXPOSE 3000
+
+# Healthcheck (ปรับ path ใหั้ตรง service ของคุณ)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/health', r => r.statusCode === 200 ? process.exit(0) : process.exit(1)).on('error', ()=>process.exit(1))"
+
+# Start production (uses dist)
+CMD ["npm", "run", "start:prod"]

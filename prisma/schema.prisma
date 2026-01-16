@@ -4,105 +4,204 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url      = env("DATABASE_URL_DEV")
 }
 
 // Postgraduate Education Center 
+
+// ---------- Enums ----------
+enum ActivityType {
+  LECTURE
+  LAB
+  WORKSHOP
+}
+
+enum PricingTier {
+  EARLY
+  REGULAR
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  CANCELLED
+  REFUNDED
+}
+
+enum TransferSlipStatus {
+  PENDING // ผู้ใช้ส่งสลิปแล้ว รอการตรวจ
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
 model PGT_User {
-  id                Int                 @id @default(autoincrement())
-  email             String              @unique
-  fnameTh           String
-  fnameEn           String
-  lnameTh           String
-  lnameEn           String
-  ethnicity         String //เชื้อชาติ
-  county            String // จังหวัด
-  zipcode           String
-  prefix            String
-  nationality       String
-  sex               String
-  idCard            String              @unique
-  address           String
-  parish            String // ตำบล
-  district          String
-  schoolEnd         String?
-  schoolYear        String?
-  worklocaltion     String?
-  workaddress       String
-  phone             String
-  lineId            String?
-  foodtype          String
-  certName          String?
-  hdb               String
-  pwd               String
-  pdpa              String
-  role              String
-  codeId            String              @unique
-  cecode            String?
-  admp              String?
-  points            Int? @default(0)
-  createdAt         DateTime
-  updatedAt         DateTime
-  PGT_title_Project PGT_title_Project[]
-  PGT_CheckIn       PGT_CheckIn[]
-  PGT_Send_Receipt  PGT_Send_Receipt[]
+  id                      Int                        @id @default(autoincrement())
+  email                   String                     @unique
+  fnameTh                 String
+  fnameEn                 String
+  lnameTh                 String
+  lnameEn                 String
+  ethnicity               String //เชื้อชาติ
+  county                  String // จังหวัด
+  zipcode                 String
+  prefix                  String
+  nationality             String
+  sex                     String
+  idCard                  String                     @unique
+  address                 String
+  parish                  String // ตำบล
+  district                String
+  schoolEnd               String?
+  schoolYear              String?
+  worklocaltion           String?
+  workaddress             String
+  phone                   String
+  lineId                  String?
+  foodtype                String
+  certName                String?
+  hdb                     String
+  pwd                     String
+  pdpa                    String
+  role                    String
+  codeId                  String                     @unique
+  cecode                  String?
+  admp                    String?
+  points                  Int?                       @default(0)
+  createdAt               DateTime
+  updatedAt               DateTime
+  // ความสัมพันธ์กับกิจกรรม
+  pgtProjectRegistrations PGT_Project_Registration[]
+
+  pgtTitleProjects PGT_title_Project[]
+  pgtCheckIns      PGT_CheckIn[]
+  pgtSendReceipts  PGT_Send_Receipt[]
 }
 
 // /*------ CREATE PROJECTS -------*/
 model PGT_Register_Project {
-  id                Int                 @id @default(autoincrement())
-  title             String
-  subtitle          String
-  detail            String
-  image             String
-  count_regi        Int
-  price_regi        Int
-  discount          String
-  open_regi         DateTime            @default(now())
-  close_regi        DateTime
-  createdAt         DateTime
-  updatedAt         DateTime
-  PGT_title_Project PGT_title_Project[]
-  PGT_CheckIn       PGT_CheckIn[]
-  PGT_Send_Receipt  PGT_Send_Receipt[]
+  id       Int    @id @default(autoincrement())
+  title    String
+  subtitle String
+  detail   String
+  image    String
+
+  count_regi Int
+  price_regi Int
+
+  discount   String
+  open_regi  DateTime @default(now())
+  close_regi DateTime
+  createdAt  DateTime
+  updatedAt  DateTime
+
+  // ความสัมพันธ์กับกิจกรรม
+  pgtProjectActivities PGT_Project_Activity[]
+
+  // ความสัมพันธ์กับใบสมัคร
+  pgtProjectRegistrations PGT_Project_Registration[]
+
+  pgtTitleProjects PGT_title_Project[]
+  pgtCheckIns      PGT_CheckIn[]
+  pgtSendReceipts  PGT_Send_Receipt[]
+
+  @@index([open_regi])
+  @@index([close_regi])
 }
 
-// /*------ TITLE PROJECTS -------*/
-model PGT_title_Project {
-  id                   Int                  @id @default(autoincrement())
-  userId               String
-  pgt_user             PGT_User             @relation(fields: [userId], references: [codeId])
-  titleId              Int
-  pgt_register_project PGT_Register_Project @relation(fields: [titleId], references: [id])
-  transferSlip         String?
-  sentTransferSlip     String @default("pending")            
-  remaker              String?
-  createdAt            DateTime?
-  autodate_cancel      DateTime?
-  W_updatedAt          DateTime?
-  S_updatedAt          DateTime?
-  F_updatedAt          DateTime?
+// /*------ Activity Type  -------*/
+
+model PGT_Project_Activity {
+  id        Int          @id @default(autoincrement())
+  projectId Int
+  type      ActivityType
+  capacity  Int
+
+  earlyPrice   Int
+  regularPrice Int
+
+  // รายการในใบสมัคร
+  pgtProjectRegistrationItems PGT_Project_RegistrationItem[]
+
+  project PGT_Register_Project @relation(fields: [projectId], references: [id])
+
+  @@index([projectId, type])
 }
 
-// /*------ CHECKIN -------*/
-model PGT_CheckIn {
-  id                   Int                  @id @default(autoincrement())
-  userId               String
-  pgt_user             PGT_User             @relation(fields: [userId], references: [codeId])
-  titleId              Int
-  pgt_register_project PGT_Register_Project @relation(fields: [titleId], references: [id])
-  dateCheckin          String?
-  timeCheckin          String?
+// ---------- Registration (ใบสมัครระดับโปรเจค) ----------
+model PGT_Project_Registration {
+  id        Int                  @id @default(autoincrement())
+  projectId Int
+  project   PGT_Register_Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   PGT_User @relation(fields: [userId], references: [codeId])
+
+  // สรุปราคาและสถานะ ณ ใบสมัคร
+  totalAmount    Int         @default(0) // รวมจาก items (unitPriceSnapshot * qty - discount)
+  discountAmount Int         @default(0) // ส่วนลดทั้งบิล (ถ้ามี)
+  pricingTier    PricingTier // EARLY หรือ REGULAR ณ เวลาใบสมัคร (ไว้แสดง/สรุป)
+  packageName    String? // ชื่อแพ็กเกจที่เลือก (ถ้าเป็นแพ็กเกจรวมหลายกิจกรรม)
+
+  // การเงิน/สลิป
+  paymentStatus      PaymentStatus      @default(PENDING)
+  transferSlipUrl    String?
+  transferSlipStatus TransferSlipStatus @default(PENDING)
+  paidAt             DateTime?
+
+  // เวลารับสมัคร/ยกเลิก/อัพเดต
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  cancelledAt DateTime?
+
+  // รายการกิจกรรมที่เลือก
+  pgtProjectRegistrationItems PGT_Project_RegistrationItem[]
+  pgtPayments                 PGT_Payment[]
+
+  @@index([projectId, userId])
+  @@index([paymentStatus])
+  @@index([createdAt])
 }
 
-model PGT_Send_Receipt {
-  id                   Int                  @id @default(autoincrement())
-  userId               String
-  pgt_user             PGT_User             @relation(fields: [userId], references: [codeId])
-  titleId              Int
-  pgt_register_project PGT_Register_Project @relation(fields: [titleId], references: [id])
-  dateSend             String
-  timeSend             String
+// ---------- Registration Item (กิจกรรมที่เลือก + ราคา snapshot) ----------
+model PGT_Project_RegistrationItem {
+  id Int @id @default(autoincrement())
+
+  registrationId Int
+  registration   PGT_Project_Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+
+  activityId Int
+  activity   PGT_Project_Activity @relation(fields: [activityId], references: [id], onDelete: Restrict)
+
+  qty               Int         @default(1) // ส่วนใหญ่ = 1 แต่รองรับปรับ
+  pricingTier       PricingTier // EARLY หรือ REGULAR ณ ขณะเลือก
+  unitPriceSnapshot Int // ราคาต่อหน่วย snapshot ตอนสมัคร (สำคัญมาก!)
+  lineAmount        Int // unitPriceSnapshot * qty
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([registrationId])
+  @@index([activityId])
+}
+
+// ---------- (ทางเลือก) Payment แยกตาราง ----------
+model PGT_Payment {
+  id             Int                      @id @default(autoincrement())
+  registrationId Int
+  registration   PGT_Project_Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+
+  amount     Int // ยอดชำระ
+  status     PaymentStatus      @default(PENDING)
+  slipUrl    String?
+  slipStatus TransferSlipStatus @default(PENDING)
+  paidAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([registrationId])
+  @@index([status])
 }
 
 // /*------ CMUITACCOUNT -------*/
@@ -125,17 +224,59 @@ enum Permission {
 }
 
 model CmuItAccount {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name        String
-  email       String   @unique
-  role        Role     @default(USER)
+  email       String       @unique
+  role        Role         @default(USER)
   permissions Permission[] @default([]) // เก็บเป็น array ของ string เช่น ["อ่าน", "สร้าง", "แก้ไข", "ลบ", "หน่วย เช่น การเงิน, ธุรการ, พัสดุ", "สถานะการทำงาน"]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 
   @@map("cmu_it_accounts")
 }
 
+// /*------ TITLE PROJECTS ไม่ใช่แล้ว -------*/
+model PGT_title_Project {
+  id                   Int                  @id @default(autoincrement())
+  userId               String
+  pgt_user             PGT_User             @relation(fields: [userId], references: [codeId])
+  titleId              Int
+  pgt_register_project PGT_Register_Project @relation(fields: [titleId], references: [id])
+  priceTotal           Int?
+  transferSlip         String?
+  sentTransferSlip     String               @default("pending")
+  remaker              String?
+  createdAt            DateTime?
+  autodate_cancel      DateTime?
+  W_updatedAt          DateTime?
+  S_updatedAt          DateTime?
+  F_updatedAt          DateTime?
+}
+
+model PGT_CheckIn {
+  id                   Int                  @id @default(autoincrement())
+  userId               String
+  pgt_user             PGT_User             @relation(fields: [userId], references: [codeId])
+  titleId              Int
+  pgt_register_project PGT_Register_Project @relation(fields: [titleId], references: [id])
+  dateCheckin          DateTime?            @default(now())
+  dayIdTH              String // "20260116" จากเวลาไทย
+
+  @@unique([userId, titleId, dayIdTH], name: "uniq_user_title_per_day_th")
+  @@index([userId, titleId])
+}
+
+// /*------ CHECKIN ยังไม่ใช้ -------*/
+
+model PGT_Send_Receipt {
+  id                   Int                  @id @default(autoincrement())
+  userId               String
+  pgt_user             PGT_User             @relation(fields: [userId], references: [codeId])
+  titleId              Int
+  pgt_register_project PGT_Register_Project @relation(fields: [titleId], references: [id])
+  dateSend             String
+  timeSend             String
+}
 
 // /*--ไม่ใช่แล้ว---*/
 model PGT_Staff_Create {
@@ -156,8 +297,8 @@ model PGT_Staff_Gencode {
   agencyId         Int
   Pgt_Staff_Agency PGT_Staff_Agency   @relation(fields: [agencyId], references: [id])
   PGT_Staff_Create PGT_Staff_Create[]
-  createdAt DateTime?
-  approvedate DateTime?
+  createdAt        DateTime?
+  approvedate      DateTime?
 }
 
 model PGT_Staff_Agency {
@@ -165,4 +306,5 @@ model PGT_Staff_Agency {
   agency            String
   PGT_Staff_Gencode PGT_Staff_Gencode[]
 }
+
 // /*--ไม่ใช่แล้ว---*/

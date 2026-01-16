@@ -8,19 +8,16 @@ import {
 import * as dotenv from 'dotenv';
 import * as jwt from 'jsonwebtoken';
 
-
 @Injectable()
 export class AuthGuard implements CanActivate {
-  constructor(
-    
-  ) {
+  constructor() {
     dotenv.config();
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
-    const secret = process.env.JWT_SECRET_PGT;
-  
+    const secret = process.env.JWT_SECRET_KEY || 'default_secret';
+
     if (request.headers.authorization) {
       const token = request.headers.authorization.replace('Bearer ', '');
 

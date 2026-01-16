@@ -1,0 +1,77 @@
+services:
+  pgdb-dev:
+    image: postgres:16
+    container_name: pgdb-dev-1.0
+    ports:
+      - '5435:5432'
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER_DEV}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD_DEV}
+      POSTGRES_DB: ${POSTGRES_DB_DEV}
+      TZ: Asia/Bangkok
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+      - ./docker/initdb/dev:/docker-initdb.d
+      - ./docker/postgres/config/postgresql.conf:/etc/postgresql/postgresql.conf
+      - ./docker/postgres/config/pg_hba.conf:/etc/postgresql/pg_hba.conf
+    command: ['-c', 'config_file=/etc/postgresql/postgresql.conf']
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -U ${POSTGRES_USER_DEV} -d ${POSTGRES_DB_DEV}',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks:
+      - dev_net_nestjs
+
+  server-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DATABASE_URL: ${DATABASE_URL_DEV}
+    image: nestjs-server-dev:1.0
+    container_name: server-dev-1.0
+    env_file:
+      - .env
+    depends_on:
+      pgdb-dev:
+        condition: service_healthy
+    environment:
+      PORT: ${PORT}
+      DATABASE_URL: ${DATABASE_URL_DEV}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      CRYPTO_SECRET_KEY: ${CRYPTO_SECRET_KEY}
+      RESET_PASS_CRYPTO_SECRET_KEY: ${RESET_PASS_CRYPTO_SECRET_KEY}
+      DASHBOARD_PGT_CRYPTO_SECRET_KEY: ${DASHBOARD_PGT_CRYPTO_SECRET_KEY}
+      # TOKEN_URI: ${TOKEN_URI}
+      # REDIRECT_URI: ${REDIRECT_URI}
+      # CLIENT_ID: ${CLIENT_ID}
+      # CLIENT_SECRET: ${CLIENT_SECRET}
+      # SCOPE: ${SCOPE}
+      CMU_TOKEN_URI: ${CMU_TOKEN_URI}
+      CMU_REDIRECT_URI: ${CMU_REDIRECT_URI}
+      CMU_CLIENT_ID: ${CMU_CLIENT_ID}
+      CMU_CLIENT_SECRET: ${CMU_CLIENT_SECRET}
+      TZ: Asia/Bangkok
+    ports:
+      - '3320:3000'
+    volumes:
+      - ./:/app
+      - /app/node_modules
+    command: ['npm', 'run', 'start:dev']
+    networks:
+      - dev_net_nestjs
+
+volumes:
+  pgdata_dev:
+
+networks:
+  dev_net_nestjs:
+    name: dev_net_nestjs
+    driver: bridge

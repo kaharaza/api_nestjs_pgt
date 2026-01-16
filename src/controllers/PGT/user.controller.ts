@@ -10,6 +10,7 @@ import {
   Headers,
   UseGuards,
   Param,
+  Query,
 } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { LoggerService } from 'src/service/logger/logger.service';
@@ -18,488 +19,581 @@ import { AuthService } from 'src/auth.service';
 import { Request } from 'express';
 import { EmailService } from 'src/email.service';
 import { AuthGuard } from 'src/service/auth.guard';
+import * as CryptoJs from 'crypto-js';
+import { RateLimit } from 'src/middleware/rate-limit.decorator';
 
 const prisma = new PrismaClient();
 
-interface DataUser {
-  email: string;
-  idCard: string;
-  pwd: string;
-}
-
 @Controller('api/pgt/user')
 export class PGTUserController {
+  private secretKey: string;
+  private secretPassKey: string;
   constructor(
-    private readonly logger: LoggerService,
-    private readonly jwtService: JwtService,
     private readonly authService: AuthService,
     private readonly emailService: EmailService,
-  ) {}
+  ) {
+    this.secretKey = process.env.CRYPTO_SECRET_KEY;
+    this.secretPassKey = process.env.RESET_PASS_CRYPTO_SECRET_KEY;
+    if (!this.secretKey) {
+      throw new Error(
+        'CRYPTO_SECRET_KEY ไม่ได้ถูกกำหนดใน environment variables',
+      );
+    }
+    if (!this.secretPassKey) {
+      throw new Error(
+        'CRYPTO_SECRET_PASS_KEY ไม่ได้ถูกกำหนดใน environment variables',
+      );
+    }
+  }
 
   @Post('register')
-  async register(
-    @Req() req: Request,
-    @Body()
-    user: {
-      data: any;
-      hdb: string;
-      pwd: string;
-      pdpa: string;
-      role: string;
-      codeId: string;
-    },
-  ) {
-    const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+  @RateLimit(60, 10)
+  async register(@Body() body: { encryptedData: string }, @Req() req: Request) {
+    let finalIp =
+      req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    const nowThai = new Date();
+
     try {
+      console.log(`[${nowThai}] [Register] START | IP: ${finalIp}`);
+
+      const dataBytes = CryptoJs.AES.decrypt(
+        body.encryptedData,
+        this.secretKey,
+      );
+      const decryptedString = dataBytes.toString(CryptoJs.enc.Utf8);
+
+      if (!decryptedString) {
+        throw new Error('Decryption failed');
+      }
+
+      const dataDecode = JSON.parse(decryptedString);
+
+      const hashpasword = CryptoJs.SHA256(dataDecode.password).toString(
+        CryptoJs.enc.Hex,
+      );
+
+      const vetType =
+        dataDecode.userType === 'veterinarian'
+          ? 'Vet'
+          : dataDecode.userType === 'student'
+            ? 'Student'
+            : dataDecode.userType === 'scientist'
+              ? 'Scientist'
+              : dataDecode.userType === 'vet_nurse'
+                ? 'Vet nurse'
+                : dataDecode.userType === 'vet_tech'
+                  ? 'Vet tech'
+                  : '-';
+
+      if (!hashpasword) {
+        throw new Error('Decryption password failed');
+      }
+
+      const check_email = await prisma.pGT_User.findFirst({
+        where: {
+          email: dataDecode.email,
+          cecode: dataDecode.licenseNumber,
+        },
+      });
+
+      if (check_email) {
+        throw new Error('Email already exists');
+      }
+
+      const randomCodeId = Math.floor(Math.random() * 1000000);
+      const nameCode = 'PGT-' + randomCodeId;
+      const codeId = 'PGT-' + randomCodeId + '-' + Date.now();
+
       const res = await prisma.pGT_User.create({
         data: {
-          email: user.data.email,
-          fnameTh: user.data.fnameTh,
-          fnameEn: user.data.fnameEn,
-          lnameTh: user.data.lnameTh,
-          lnameEn: user.data.lnameEn,
-          ethnicity: user.data.ethnicity,
-          county: user.data.county,
-          zipcode: user.data.zipcode,
-          prefix: user.data.prefix,
-          nationality: user.data.nationality,
-          sex: user.data.sex,
-          idCard: user.data.idCard,
-          address: user.data.address,
-          parish: user.data.parish,
-          district: user.data.district,
-          schoolEnd: user.data.schoolEnd,
-          schoolYear: user.data.schoolYear,
-          worklocaltion: user.data.worklocaltion,
-          workaddress: user.data.workaddress,
-          phone: user.data.phone,
-          lineId: user.data.lineId,
-          foodtype: user.data.foodtype,
-          certName: user.data.certName,
-          hdb: user.hdb,
-          pwd: user.pwd,
-          pdpa: user.pdpa,
-          role: user.role,
-          codeId: user.codeId,
-          cecode: user.data.cecode ? user.data.cecode : null,
-          admp: user.data.admp ? user.data.admp : null,
+          address: dataDecode.address,
+          email: dataDecode.email,
+          phone: dataDecode.mobile,
+          codeId: nameCode,
+          county: dataDecode.province,
+          district: dataDecode.district,
+          ethnicity: dataDecode.ethnicity,
+          fnameEn: dataDecode.firstNameEn,
+          fnameTh: dataDecode.firstNameTh,
+          idCard: codeId,
+          lnameEn: dataDecode.lastNameEn,
+          lnameTh: dataDecode.lastNameTh,
+          foodtype: dataDecode.dietaryPreference,
+          nationality: dataDecode.nationality,
+          parish: dataDecode.subdistrict,
+          pwd: hashpasword,
+          prefix: dataDecode.prefixTh,
+          role: vetType,
+          sex: dataDecode.gender,
+          zipcode: dataDecode.postalCode,
+          cecode: dataDecode.licenseNumber,
+          hdb: '-',
+          lineId: dataDecode.lineId ?? '-',
+          pdpa: 'Accept',
+          schoolEnd: dataDecode.university ?? '-',
+          schoolYear: dataDecode.graduationYear ?? '-',
+          workaddress: dataDecode.workplace ?? '-',
+          worklocaltion: dataDecode.workProvince ?? '-',
+          admp: dataDecode.academicTitle ?? '-',
+          points: 0,
+          certName: dataDecode.firstNameEn + ' ' + dataDecode.lastNameEn,
           createdAt: new Date(),
           updatedAt: new Date(),
         },
       });
-      if (res) {
-        this.logger.log(`Success Register:  \n IP: ${ip}`);
 
-        //Ex. Email
-        const email = user.data.email;
-        const subject =
-          'สมัครเป็นสมาชิกศูนย์การศึกษาระดับบัณฑิตศึกษา คณะสัตวแพทยศาสตร์ มหาวิทยาลัยเชียงใหม่';
-        const message = `
-        เรียน: ${user.data.fnameTh} ${user.data.lnameTh} <br><br>
-
-        <b style="font-size: 22px; color: blue;">สมัครสมาชิกสำเร็จ</b> <br><br>
-        
-        <b>รหัสสมาชิกคือ:</b> <span>${user.codeId}</span> <br>
-        <hr><br><br>
-
-        [รายละเอียดติดต่อ]<br>
-        <b>Email: </b> <span>pgt.cmu@gmail.com</span><br>
-        <b>Phone: </b> <span>+66 5394 8114</span>
-
-        `;
-        await this.emailService.sendEmail(email, subject, message);
-
-        return {
-          respCode: HttpStatus.CREATED,
-          success: true,
-          message:
-            'The request was successful and a new resource has been created',
-        };
+      if (!res) {
+        throw new Error('Create user failed');
       }
-      return {
-        success: false,
-        respCode: HttpStatus.CONFLICT,
-        message:
-          'The request conflicts with the current state of the server (e.g., creating a duplicate resource).',
-      };
-    } catch (e) {
-      if (e.code === 'P2002') {
-        this.logger.error(
-          `Error Register: \n ${HttpStatus.CONFLICT} \n IP: ${ip}`,
-        );
-        throw new HttpException(
-          {
-            status: HttpStatus.CONFLICT,
-            code: e.code,
-            error: 'Duplicate ID card number',
-          },
-          HttpStatus.INTERNAL_SERVER_ERROR,
-        );
-      } else {
-        this.logger.error(`Error Register: \n ${e.code} \n IP: ${ip}`);
-        throw new HttpException(
-          {
-            status: HttpStatus.INTERNAL_SERVER_ERROR,
-            error: 'An error Register',
-          },
-          HttpStatus.INTERNAL_SERVER_ERROR,
-        );
-      }
-    }
-  }
 
-  @Post('checkemail')
-  async checkemail(@Body() data: DataUser, @Req() req: Request) {
-    const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
-    try {
-      const res = await prisma.pGT_User.findFirst({
-        where: {
-          email: data.email,
+      await this.emailService.sendTemplateEmail(
+        res.email,
+        'register-success',
+        'สมัครสมาชิกศูนย์การศึกษาระดับบัณฑิตศึกษา คณะสัตวแพทยศาสตร์ มหาวิทยาลัยเชียงใหม่ - สำเร็จ',
+        {
+          fnameTh: res.fnameTh,
+          lnameTh: res.lnameTh,
+          codeId: res.codeId,
+          year: new Date().getFullYear(),
         },
-      });
-      if (res) {
-        this.logger.error(
-          `Email already exists: \n ${data.email} \n IP: ${ip} \n Code: ${HttpStatus.CONFLICT}`,
-        );
-        return {
-          respCode: HttpStatus.CONFLICT,
-          success: false,
-          message: 'This email is already in the system.',
-        };
-      }
+      );
+
       return {
+        statusCode: HttpStatus.OK,
         success: true,
-        respCode: HttpStatus.OK,
-        message: 'This email is available.',
+        message: 'Create user success',
       };
-    } catch (e) {
-      this.logger.error(
-        `Error email: \n ${HttpStatus.INTERNAL_SERVER_ERROR} \n IP: ${ip}`,
-      );
-      throw new HttpException(
-        {
-          respCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          error: 'An error email',
-        },
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+    } catch (error) {
+      console.error(`[Register] ERROR | ${error.message}`);
+      return {
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        success: false,
+        message: error.message,
+      };
     }
   }
 
-  @Post('check/email')
-  async email(@Body() data: DataUser, @Req() req: Request) {
-    const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+  @Post('login')
+  @RateLimit(60, 10)
+  async login(@Body() body: { encryptedData: string }, @Req() req: Request) {
+    let finalIp =
+      req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    const nowThai = new Date();
     try {
-      const res = await prisma.pGT_User.findFirst({
-        where: {
-          email: data.email,
-        },
-      });
-      if (res) {
-        this.logger.log(`Email success: ${data.email} IP: ${ip}`);
-        return {
-          success: true,
-          respCode: HttpStatus.CREATED,
-          email: data.email,
-        };
-      } else {
-        this.logger.error(`Invalid email: ${data.email} IP: ${ip}`);
-        return {
-          success: false,
-          message: 'Invalid email',
-        };
+      console.log(`[${nowThai}] [Login] START | IP: ${finalIp}`);
+
+      const dataBytes = CryptoJs.AES.decrypt(
+        body.encryptedData,
+        this.secretKey,
+      );
+      const decryptedString = dataBytes.toString(CryptoJs.enc.Utf8);
+
+      if (!decryptedString) {
+        throw new Error('Decryption failed');
       }
-    } catch (e) {
-      this.logger.error(`Error email reset PWD: \n ${e.code} \n IP: ${ip}`);
-      throw new HttpException(
-        {
-          respCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          error: 'An error email reset PWD',
-        },
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
 
-  @Post('signin')
-  async signin(@Body() user: DataUser, @Req() req: Request) {
-    const ip = req.headers['x--forwarded-for'] || req.connection.remoteAddress;
-    try {
+      const dataDecode = JSON.parse(decryptedString);
+
+      const hashpasword = CryptoJs.SHA256(dataDecode.password).toString(
+        CryptoJs.enc.Hex,
+      );
+
       const userData = await prisma.pGT_User.findFirst({
         where: {
-          email: user.email,
-          pwd: user.pwd,
+          email: dataDecode.email,
+          pwd: hashpasword,
+        },
+        select: {
+          codeId: true,
+          cecode: true,
+          email: true,
+          fnameEn: true,
+          lnameEn: true,
+          points: true,
+          role: true,
+          foodtype: true,
+          sex: true,
         },
       });
 
       if (userData) {
-        const token = await this.authService.loginUser(userData);
-        this.logger.log(`Change Password Success: ${userData.email} IP: ${ip}`);
+        const token: any = await this.authService.loginPgt(userData);
+        console.log(`[${nowThai}] [Login] END | IP: ${finalIp}`);
         return {
+          statusCode: HttpStatus.OK,
           success: true,
-          respCode: HttpStatus.OK,
           token: token,
         };
       } else {
         return {
-          respCode: HttpStatus.BAD_REQUEST,
+          statusCode: HttpStatus.BAD_REQUEST,
           success: false,
-          message:
-            'The request was invalid or cannot be understood by the server (e.g., incorrect or incomplete data).',
+          message: 'Email or password invalid',
         };
       }
-    } catch (e) {
-      this.logger.error(
-        `Email or password is invalid.: \n ${HttpStatus.INTERNAL_SERVER_ERROR} \n IP: ${ip}`,
-      );
-      throw new HttpException(
-        {
-          respCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          error: 'An email or password is invalid.',
-        },
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+    } catch (error) {
+      console.error(`[Login] ERROR | ${error.message}`);
+      return {
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        success: false,
+        message: error.message,
+      };
     }
   }
 
-  @Put('change/password')
-  async changepassword(@Body() change: DataUser, @Req() req: Request) {
-    const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+  @Post('reset-pass')
+  @RateLimit(60, 10)
+  async signin(@Body() body: { encryptedData: string }, @Req() req: Request) {
+    const finalIp =
+      req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    const nowThai = new Date();
     try {
-      const res = await prisma.pGT_User.update({
+      console.log(`[${nowThai}] [Exchange Key] START | IP: ${finalIp}`);
+
+      const dataBytes = CryptoJs.AES.decrypt(
+        body.encryptedData,
+        this.secretKey,
+      );
+      const decryptedString = dataBytes.toString(CryptoJs.enc.Utf8);
+
+      if (!decryptedString) {
+        throw new Error('Decryption failed');
+      }
+
+      const dataDecode = JSON.parse(decryptedString);
+
+      const userData = await prisma.pGT_User.findFirst({
         where: {
-          email: change.email,
+          email: dataDecode,
         },
-        data: {
-          pwd: change.pwd,
+        select: {
+          codeId: true,
+          email: true,
+          fnameTh: true,
+          lnameTh: true,
+          id: true,
         },
       });
 
-      if (res) {
-        this.logger.log(`Change Password Success: ${change.email} IP: ${ip}`);
+      if (!userData) {
         return {
-          success: true,
-          respCode: HttpStatus.CREATED,
-        };
-      }
-    } catch (e) {
-      this.logger.error(
-        `Error Change Password: \n ${HttpStatus.INTERNAL_SERVER_ERROR} \n IP: ${ip}`,
-      );
-      throw new HttpException(
-        {
-          status: HttpStatus.INTERNAL_SERVER_ERROR,
-          error: 'An error Change Password',
-        },
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
-  @Put('update/new/data/user')
-  @UseGuards(AuthGuard)
-  async newdatauser(
-    @Body() user: { data: any; id: number },
-    @Req() req: Request,
-  ) {
-    const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
-
-    try {
-      let res;
-      if (user && user.data && user.data.admp) {
-        res = await prisma.pGT_User.update({
-          where: {
-            id: Number(user.id),
-          },
-          data: {
-            admp: user.data.admp,
-            cecode: user.data.cecode,
-            certName: user.data.certName,
-            foodtype: user.data.foodtype,
-            lineId: user.data.lineId,
-            worklocaltion: user.data.worklocaltion,
-          },
-        });
-      } else {
-        res = await prisma.pGT_User.update({
-          where: {
-            id: Number(user.id),
-          },
-          data: {
-            cecode: user.data.cecode,
-            certName: user.data.certName,
-            foodtype: user.data.foodtype,
-            lineId: user.data.lineId,
-            worklocaltion: user.data.worklocaltion,
-          },
-        });
-      }
-
-      if (res !== undefined) {
-        this.logger.log(
-          `Change Data Success: ${HttpStatus.CREATED} \n IP: ${ip} \n  ${user.id} `,
-        );
-        return {
-          respCode: HttpStatus.CREATED,
-          success: true,
-          message:
-            'The request was successful and a new resource has been created',
-        };
-      }
-    } catch (e) {
-      this.logger.error(
-        `Error Change Password: \n ${HttpStatus.INTERNAL_SERVER_ERROR} \n IP: ${ip}`,
-      );
-      throw new HttpException(
-        {
-          status: HttpStatus.INTERNAL_SERVER_ERROR,
-          error: 'An error Change Password',
-        },
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
-  @Get('authorization/info')
-  async info(@Headers('Authorization') auth: string) {
-    try {
-      const jwt = auth.replace('Bearer ', '');
-      const payload = this.jwtService.decode(jwt);
-      if (payload == null) {
-        return {
-          respCode: HttpStatus.NOT_FOUND,
+          statusCode: HttpStatus.BAD_REQUEST,
           success: false,
-          messages: 'The requested resource could not be found.',
+          message: 'Data not found',
         };
       }
 
-      return { success: true, payload: payload, respCode: HttpStatus.OK };
-    } catch (e) {
-      return { status: 500, message: e.message };
-    }
-  }
+      const redirect_base = process.env.RESET_REDIRECT_URI;
+      const codeId = userData.codeId;
+      const expiresInMinutes = 30; // minutes
+      const now = Date.now();
+      const exp = now + expiresInMinutes * 60 * 1000; // ms
 
-  @Get('member/count')
-  async memberCount() {
-    try {
-      const res = await prisma.pGT_User.findMany();
-      return {
-        success: true,
-        respCode: HttpStatus.CREATED,
-        results: res.length,
+      const payload = {
+        id: userData.id,
+        email: userData.email,
+        codeId: codeId,
+        exp: exp,
       };
-    } catch (e) {
-      return { respCode: HttpStatus.BAD_REQUEST, message: 'BAD_REQUEST' };
+
+      const dataPassEncode = CryptoJs.AES.encrypt(
+        JSON.stringify(payload),
+        this.secretPassKey,
+      ).toString();
+
+      const redirect_url = `${redirect_base}?key=${encodeURIComponent(dataPassEncode)}`;
+
+      await this.emailService.sendTemplateEmail(
+        userData.email,
+        'reset-password',
+        'รีเซ็ตรหัสผ่าน - ศูนย์การศึกษาระดับบัณฑิตศึกษา คณะสัตวแพทยศาสตร์ มหาวิทยาลัยเชียงใหม่',
+        {
+          fnameTh: userData.fnameTh,
+          lnameTh: userData.lnameTh,
+          redirect: redirect_url,
+        },
+      );
+
+      return {
+        statusCode: HttpStatus.OK,
+        success: true,
+        message: 'Send email success',
+      };
+    } catch (error) {
+      console.error(`[Login] ERROR | ${error.message}`);
+      return {
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        success: false,
+        message: error.message,
+      };
     }
   }
 
-  @Get('user/data/:id')
-  @UseGuards(AuthGuard)
-  async data(@Param('id') id: number, @Req() req: Request) {
-    const ip =
-      req.headers['x-forwarded-for'] ||
-      req.connection.remoteAddress ||
-      req.socket.remoteAddress ||
-      (req.connection as any).socket.remoteAddress;
+  @Post('new-pass')
+  @RateLimit(60, 10)
+  async newpass(@Body() body: { encryptedData: string }, @Req() req: Request) {
+    const finalIp =
+      req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    const nowThai = new Date();
     try {
-      const res = await prisma.pGT_User.findFirst({
+      console.log(`[${nowThai}] [Exchange Key] START | IP: ${finalIp}`);
+
+      const dataBytes = CryptoJs.AES.decrypt(
+        body.encryptedData,
+        this.secretKey,
+      );
+      const decryptedString = dataBytes.toString(CryptoJs.enc.Utf8);
+
+      if (!decryptedString) {
+        throw new Error('Decryption failed');
+      }
+
+      const dataDecode = JSON.parse(decryptedString);
+
+      const hashpasword = CryptoJs.SHA256(dataDecode.password).toString(
+        CryptoJs.enc.Hex,
+      );
+
+      const userData = await prisma.pGT_User.findFirst({
         where: {
-          id: Number(id),
+          id: dataDecode.id,
+          codeId: dataDecode.codeId,
+          email: dataDecode.email,
         },
         select: {
+          codeId: true,
+          email: true,
+          fnameTh: true,
+          lnameTh: true,
+          id: true,
+        },
+      });
+
+      if (!userData) {
+        return {
+          statusCode: HttpStatus.BAD_REQUEST,
+          success: false,
+          message: 'Data not found',
+        };
+      }
+
+      const update = await prisma.pGT_User.update({
+        where: {
+          id: userData.id,
+          email: userData.email,
+          codeId: userData.codeId,
+        },
+        data: {
+          pwd: hashpasword, //: dataDecode.codeId,
+        },
+      });
+
+      if (update) {
+        return {
+          statusCode: HttpStatus.OK,
+          success: true,
+          message: 'Update success',
+        };
+      }
+    } catch (error) {
+      console.error(`[Login] ERROR | ${error.message}`);
+      return {
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        success: false,
+        message: error.message,
+      };
+    }
+  }
+
+  @Get('profile')
+  @RateLimit(60, 10)
+  @UseGuards(AuthGuard)
+  async profile(@Query('data') data: string, @Req() req: Request) {
+    const finalIp =
+      req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    const nowThai = new Date().toLocaleString('th-TH', {
+      timeZone: 'Asia/Bangkok',
+    });
+    try {
+      console.log(`[${nowThai}] [Profile] START | IP: ${finalIp}`);
+
+      if (!data) {
+        return {
+          statusCode: HttpStatus.BAD_REQUEST,
+          success: false,
+          message: 'Missing data parameter',
+        };
+      }
+
+      const cipherText = decodeURIComponent(data);
+
+      const bytes = CryptoJs.AES.decrypt(cipherText, this.secretKey);
+      const decryptedString = bytes.toString(CryptoJs.enc.Utf8);
+
+      if (!decryptedString) {
+        return {
+          statusCode: HttpStatus.BAD_REQUEST,
+          success: false,
+          message: 'Decryption failed',
+        };
+      }
+
+      const dataDecode = JSON.parse(decryptedString);
+
+      const userData = await prisma.pGT_User.findFirst({
+        where: {
+          codeId: dataDecode.codeId,
+          id: dataDecode.id,
+        },
+        select: {
+          id: true,
+          email: true,
+          fnameTh: true,
+          lnameTh: true,
+          codeId: true,
+          fnameEn: true,
+          lnameEn: true,
+          ethnicity: true,
+          county: true,
+          zipcode: true,
+          prefix: true,
+          nationality: true,
+          sex: true,
+          idCard: true,
+          address: true,
+          parish: true,
+          district: true,
+          schoolEnd: true,
+          schoolYear: true,
+          workaddress: true,
           worklocaltion: true,
+          phone: true,
           lineId: true,
           certName: true,
           cecode: true,
           admp: true,
           foodtype: true,
+          pdpa: true,
+          role: true,
+          createdAt: true,
+          updatedAt: true,
         },
       });
+
+      if (!userData) throw new Error('User not found');
+
+      console.log(`[${nowThai}] [Profile] END | IP: ${finalIp}`);
       return {
-        respCode: HttpStatus.OK,
+        statusCode: HttpStatus.OK,
         success: true,
-        result: res,
         message:
-          ' The request was successful and the server has returned the requested data',
+          'The request was successful and the server has returned the requested data',
+        results: userData,
       };
-    } catch (e) {
-      this.logger.error(
-        `INTERNAL_SERVER_ERROR: \n IP: ${ip} \n respCode: ${HttpStatus.INTERNAL_SERVER_ERROR} \n Error message: ${e}`,
-      );
+    } catch (error) {
+      console.error(`[Profile] ERROR | ${error.message}`);
       return {
-        respCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: 'INTERNAL_SERVER_ERROR',
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        success: false,
+        message: error.message,
       };
     }
   }
 
-  @Get('list/user/:type')
+  @Put('profile/edit')
+  @RateLimit(60, 10)
   @UseGuards(AuthGuard)
-  async alluser(@Param('type') type: string, @Req() req: Request) {
-    const ip =
-      req.headers['x-forwarded-for'] ||
-      req.connection.remoteAddress ||
-      req.socket.remoteAddress ||
-      (req.connection as any).socket.remoteAddress;
+  async edit(@Query('data') data: string, @Req() req: Request) {
+    const finalIp =
+      req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    const nowThai = new Date().toLocaleString('th-TH', {
+      timeZone: 'Asia/Bangkok',
+    });
+
     try {
+      console.log(`[${nowThai}] [Profile Edit] START | IP: ${finalIp}`);
 
-      const decode64 = atob(type)
-      const types = decode64.replace("heander ", "")
-
-      let role;
-      let res;
-
-      if (types == "1") {
-        role = 'Vet'
-      } else if (types == "2") {
-        role = 'Vet nurse'
-      } else if (types == "3") {
-        role = 'Vet tech'
-      } else if (types == "4") {
-        role = 'Scientist'
-      }
-
-      if (role !== '') {
-         res = await prisma.pGT_User.findMany({
-          where: {
-            role: role
-          },
-          include: {
-            PGT_title_Project: true
-          }
-        })
-      } else {
-         res = await prisma.pGT_User.findMany({
-          include: {
-            PGT_title_Project: true
-          }
-         })
-         
-      }
-
-      if (res.length > 0) {
+      if (!data) {
         return {
-          respCode: HttpStatus.OK,
-          success: true,
-          result: res,
-          message:
-            'The request was successful and the server has returned the requested data',
-        }
-      } else {
-        return {
-          respCode: HttpStatus.NO_CONTENT,
+          statusCode: HttpStatus.BAD_REQUEST,
           success: false,
-          message:
-            'The request was successful, but there is no content to send in the response',
-        }
+          message: 'Missing data parameter',
+        };
       }
-    } catch (e) {
-      this.logger.error(
-        `INTERNAL_SERVER_ERROR: \n IP: ${ip} \n respCode: ${HttpStatus.INTERNAL_SERVER_ERROR} \n Error message: ${e}`,
-      );
+
+      console.debug(data);
+
+      const cipherText = decodeURIComponent(data);
+      const bytes = CryptoJs.AES.decrypt(cipherText, this.secretKey);
+      const decryptedString = bytes.toString(CryptoJs.enc.Utf8);
+
+      if (!decryptedString) {
+        return {
+          statusCode: HttpStatus.BAD_REQUEST,
+          success: false,
+          message: 'Decryption failed',
+        };
+      }
+
+      const dataDecode = JSON.parse(decryptedString);
+
+      if (!dataDecode) {
+        return {
+          statusCode: HttpStatus.BAD_REQUEST,
+          success: false,
+          message: 'Missing codeId parameter',
+        };
+      }
+
+      const res = await prisma.pGT_User.update({
+        where: {
+          id: dataDecode.id,
+          codeId: dataDecode.codeId,
+        },
+        data: {
+          fnameTh: dataDecode.fnameTh,
+          lnameTh: dataDecode.lnameTh,
+          ethnicity: dataDecode.ethnicity,
+          county: dataDecode.county,
+          zipcode: dataDecode.zipcode,
+          prefix: dataDecode.prefix,
+          nationality: dataDecode.nationality,
+          sex: dataDecode.sex,
+          address: dataDecode.address,
+          parish: dataDecode.parish,
+          district: dataDecode.district,
+          schoolEnd: dataDecode.schoolEnd,
+          schoolYear: dataDecode.schoolYear,
+          workaddress: dataDecode.workaddress,
+          worklocaltion: dataDecode.worklocaltion,
+          lineId: dataDecode.lineId,
+          certName: dataDecode.certName,
+          cecode: dataDecode.cecode,
+          admp: dataDecode.admp,
+          updatedAt: new Date(),
+        },
+      });
+
+      if (!res) {
+        return {
+          statusCode: HttpStatus.BAD_REQUEST,
+          success: false,
+          message: 'Update failed',
+        };
+      }
+
+      console.log(`[${nowThai}] [Profile Edit] END | IP: ${finalIp}`);
       return {
-        respCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: 'INTERNAL_SERVER_ERROR',
+        statusCode: HttpStatus.OK,
+        success: true,
+        message: 'Edit profile successfully',
+      };
+    } catch (error) {
+      console.error(`[Profile Edit] ERROR | ${error.message}`);
+      return {
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        success: false,
+        message: error.message,
       };
     }
   }

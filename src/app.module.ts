@@ -15,6 +15,10 @@ import { PGTUserController } from './controllers/PGT/user.controller';
 import { PGTProjectController } from './controllers/PGT/project.controller';
 import { PGTCheckInController } from './controllers/PGT/checkin.controller';
 import { SponsorController } from './controllers/PGT/sponsor.controller';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
+import { AuthCMUService } from './auth.cmu.service';
+import { AuthController } from './controllers/PGT/auth.controller';
 
 dotenv.config();
 @Module({
@@ -23,28 +27,44 @@ dotenv.config();
     ConfigModule.forRoot(),
     MailerModule.forRootAsync({
       imports: [ConfigModule],
+      inject: [ConfigService],
       useFactory: async (configService: ConfigService) => ({
         transport: {
-          host: 'smtp.gmail.com',
-          port: 465,
-          secure: true,
+          host: configService.get<string>('MAIL_HOST'),
+          port: configService.get<string>('MAIL_PORT'),
+          secure: false,
+          requireTLS: true,
           auth: {
-            user: configService.get<string>('MAILER_EMAIL'),
-            pass: configService.get<string>('MAILER_PASSWORD'),
+            user: configService.get<string>('MAIL_USER'),
+            pass: configService.get<string>('MAIL_PASS'),
+          },
+          tls: {
+            rejectUnauthorized: false,
           },
         },
+        defaults: {
+          from: '"PGT CMU" <no-reply-pgt-cmu@cmu.ac.th>',
+        },
       }),
-      inject: [ConfigService],
     }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60_000, // ค่า default 60 วิ
+        limit: 60, // ค่า default 60 req
+      },
+    ]),
+
     JwtPgtModule,
-    
+
     ServeStaticModule.forRoot({
-      rootPath: join(__dirname, '..', 'src', 'filePGT'),
-      serveRoot: '/filePGT',
+      rootPath: join(__dirname, '..', 'upload', 'tmp'),
+      serveRoot: '/app/upload/tmp',
+      exclude: ['/api*'],
     }),
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'upload', 'PGT', 'Slip'),
-      serveRoot: '/upload/PGT/Slip',
+      serveRoot: '/app/upload/PGT/Slip',
+      exclude: ['/api*'],
     }),
   ],
   controllers: [
@@ -53,14 +73,19 @@ dotenv.config();
     PGTProjectController,
     PGTCheckInController,
     SponsorController,
+    AuthController,
   ],
   providers: [
     EmailService,
     AuthService,
+    AuthCMUService,
     LineNotifyService,
     LoggerService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard, // เปิดใช้ guard ทั่วทั้งแอป
+    },
   ],
-
 })
 export class AppModule {
   configure(consumer: MiddlewareConsumer) {

@@ -7,1050 +7,699 @@ import {
   Param,
   Post,
   Put,
+  Query,
   Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
-} from "@nestjs/common";
-import { PrismaClient } from "@prisma/client";
-import { AuthGuard } from "src/service/auth.guard";
-import { Request } from "express";
-import { LoggerService } from "src/service/logger/logger.service";
-import { FileInterceptor } from "@nestjs/platform-express";
-import { diskStorage } from "multer";
-import { extname } from "path";
-import { now } from "moment-timezone";
-import { EmailService } from "src/email.service";
-import { LineNotifyService } from "src/line.service";
+} from '@nestjs/common';
+import { PrismaClient } from '@prisma/client';
+import { AuthGuard } from 'src/service/auth.guard';
+import { Request } from 'express';
+import { LoggerService } from 'src/service/logger/logger.service';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
+import { now } from 'moment-timezone';
+
+import * as path from 'path';
+import * as fs from 'fs';
+import * as fsp from 'fs/promises';
+
+import { EmailService } from 'src/email.service';
+import { LineNotifyService } from 'src/line.service';
+import { RateLimit } from 'src/middleware/rate-limit.decorator';
+import * as CryptoJs from 'crypto-js';
+import { PGTUserController } from './user.controller';
 
 const prisma = new PrismaClient();
-const fs = require("fs");
 
-interface DataProject {
-  titleId: number;
-  codeId: string;
-  userId: string;
-}
-
-@Controller("api/pgt/project")
+@Controller('api/pgt/project')
 export class PGTProjectController {
+  private secretKeyDashboard: string;
+  private secretKey: string;
+
   constructor(
     private readonly logger: LoggerService,
     private readonly emailService: EmailService,
-    private readonly lineNotifyService: LineNotifyService
-  ) {}
-
-  @Get("list/home")
-  async listhome() {
-    try {
-      const res = await prisma.pGT_Register_Project.findMany({
-        include: {
-          PGT_title_Project: true,
-        },
-        orderBy: {
-          close_regi: "desc",
-        },
-        take: 5,
-      });
-
-      if (res) {
-        return {
-          respCode: HttpStatus.OK,
-          success: true,
-          message:
-            "The request was successful and the server has returned the requested data",
-          results: res,
-          count: res.length,
-        };
-      }
-    } catch (e) {
-      return {
-        respCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: "INTERNAL_SERVER_ERROR ",
-      };
-    }
-  }
-
-  @Get("list/projects")
-  async projects() {
-    try {
-      const currentDate = new Date();
-      const res = await prisma.pGT_Register_Project.findMany({
-        where: {
-          close_regi: {
-            gt: currentDate,
-          },
-        },
-        include: {
-          PGT_title_Project: true,
-        },
-        orderBy: {
-          close_regi: "desc",
-        },
-      });
-      if (res) {
-        return {
-          respCode: HttpStatus.OK,
-          success: true,
-          message:
-            "The request was successful and the server has returned the requested data",
-          results: res,
-        };
-      }
-    } catch (e) {
-      return {
-        respCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: "INTERNAL_SERVER_ERROR ",
-      };
-    }
-  }
-
-  @Get("list/user/registe/:titleId")
-  @UseGuards(AuthGuard)
-  async listuserregister(
-    @Param("titleId") titleId: string,
-    @Req() req: Request
   ) {
-    const ip =
-      req.headers["x-forwarded-for"] ||
-      req.connection.remoteAddress ||
-      req.socket.remoteAddress ||
-      (req.connection as any).socket.remoteAddress;
-    try {
-      const decode64 = atob(titleId);
-      const isTitleId = decode64.replace("heander ", "");
-      const isValueId = parseInt(isTitleId);
-
-      const res = await prisma.pGT_title_Project.findMany({
-        where: {
-          titleId: isValueId,
-          OR: [
-            { sentTransferSlip: "approved" },
-            { sentTransferSlip: "sponsor" },
-          ],
-        },
-        include: {
-          pgt_user: {
-            select: {
-              prefix: true,
-              fnameTh: true,
-              lnameTh: true,
-              role: true,
-              email: true,
-              phone: true,
-              cecode: true,
-              certName: true,
-              worklocaltion: true,
-              foodtype: true
-            },
-          },
-          pgt_register_project: {
-            select: {
-              title: true,
-            },
-          },
-        },
-      });
-
-      if (res.length > 0) {
-        return {
-          respCode: HttpStatus.OK,
-          success: true,
-          message:
-            "The request was successful and the server has returned the requested data",
-          results: res,
-        };
-      }
-    } catch (e) {
-      this.logger.error(
-        `INTERNAL_SERVER_ERROR: \n IP: ${ip} \n respCode: ${HttpStatus.INTERNAL_SERVER_ERROR} \n Error message: ${e}`
+    this.secretKeyDashboard = process.env.DASHBOARD_PGT_CRYPTO_SECRET_KEY;
+    this.secretKey = process.env.CRYPTO_SECRET_KEY;
+    if (!this.secretKeyDashboard) {
+      throw new Error(
+        'CRYPTO_SECRET_KEY_DASHBOARD ไม่ได้ถูกกำหนดใน environment variables',
       );
-      return {
-        respCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: "INTERNAL_SERVER_ERROR",
-      };
+    }
+    if (!this.secretKey) {
+      throw new Error(
+        'CRYPTO_SECRET_KEY ไม่ได้ถูกกำหนดใน environment variables',
+      );
     }
   }
 
-  @Get("list/title/:titleid")
-  async listtitle(@Param("titleid") titleId: number) {
-    try {
-      const res = await prisma.pGT_Register_Project.findMany({
-        where: {
-          id: Number(titleId),
-        },
-        select: {
-          title: true,
-          detail: true,
-          PGT_CheckIn: true,
-        },
-      });
+  // New Code
 
-      if (res[0].PGT_CheckIn.length > 0) {
-        const checkdate = await prisma.pGT_CheckIn.findMany({
-          where: {
-            dateCheckin: new Date().toLocaleDateString(),
-          },
-          include: {
-            pgt_user: {
-              select: {
-                prefix: true,
-                fnameTh: true,
-                lnameTh: true,
-                role: true,
-              },
-            },
-          },
-          orderBy: {
-            id: "desc",
-          },
-        });
-
-        return {
-          respCode: HttpStatus.OK,
-          success: true,
-          message:
-            "The request was successful and the server has returned the requested data",
-          result: res,
-          counts: checkdate.length,
-          lists: checkdate,
-        };
-      } else {
-        return {
-          respCode: HttpStatus.OK,
-          success: true,
-          message:
-            "The request was successful and the server has returned the requested data",
-          result: res,
-        };
-      }
-    } catch (e) {
-      return {
-        respCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: "INTERNAL_SERVER_ERROR ",
-      };
-    }
-  }
-
-  @Get("list/sent/transfer/:id/:slip")
+  @Post('manage')
+  @RateLimit(60, 10)
   @UseGuards(AuthGuard)
-  async transferslip(
-    @Param("id") id: string,
-    @Param("slip") slip: string,
-    @Req() req: Request
+  async createdProject(
+    @Body() body: { encryptedData: string },
+    @Req() req: Request,
   ) {
-    const ip =
-      req.headers["x-forwarded-for"] ||
-      req.connection.remoteAddress ||
-      req.socket.remoteAddress ||
-      (req.connection as any).socket.remoteAddress;
-    try {
-      const res = await prisma.pGT_title_Project.findMany({
-        where: {
-          userId: id,
-          sentTransferSlip: slip,
-        },
-        include: {
-          pgt_register_project: true,
-        },
-      });
+    let finalIp =
+      req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    const nowThai = new Date().toLocaleString('th-TH', {
+      timeZone: 'Asia/Bangkok',
+    });
 
-      if (res.length > 0) {
-        return {
-          respCode: HttpStatus.OK,
-          tag: slip,
-          results: res,
-          success: true,
-          message:
-            "The request was successful and the server has returned the requested data.",
-        };
-      } else {
-        return {
-          respCode: HttpStatus.NO_CONTENT,
-          tag: slip,
-          success: false,
-          message:
-            "The request was successful, but there is no content to send in the response.",
-        };
+    try {
+      console.log(`[${nowThai}] [Register] START | IP: ${finalIp}`);
+
+      const dataBytes = CryptoJs.AES.decrypt(
+        body.encryptedData,
+        this.secretKeyDashboard,
+      );
+      const decryptedData = dataBytes.toString(CryptoJs.enc.Utf8);
+      const projectData = JSON.parse(decryptedData);
+
+      if (!projectData.email) {
+        throw new Error('Email is required');
       }
-    } catch (e) {
-      this.logger.error(
-        `INTERNAL_SERVER_ERROR: \n IP: ${ip} \n respCode: ${HttpStatus.INTERNAL_SERVER_ERROR} \n Error message: ${e}`
-      );
-      return {
-        respCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: "INTERNAL_SERVER_ERROR",
-      };
-    }
-  }
-
-  @Get("count/:id")
-  @UseGuards(AuthGuard)
-  async count(@Param("id") id: string, @Req() req: Request) {
-    const ip =
-      req.headers["x-forwarded-for"] ||
-      req.connection.remoteAddress ||
-      req.socket.remoteAddress ||
-      (req.connection as any).socket.remoteAddress;
-    try {
-      const res = await prisma.pGT_title_Project.findMany({
-        where: {
-          userId: id,
-        },
-        select: {
-          sentTransferSlip: true,
-        },
-      });
-
-      const pendingCount = res.filter(
-        (record) => record.sentTransferSlip === "pending"
-      ).length;
-      const waitingCount = res.filter(
-        (record) => record.sentTransferSlip === "waiting"
-      ).length;
-      const approvedCount = res.filter(
-        (record) => record.sentTransferSlip === "approved"
-      ).length;
-      const failCount = res.filter(
-        (record) => record.sentTransferSlip === "fail"
-      ).length;
-
-      return {
-        status: HttpStatus.OK,
-        success: true,
-        message:
-          "The request was successful and the server has returned the requested data",
-        counts: {
-          pending: pendingCount,
-          waiting: waitingCount,
-          approved: approvedCount,
-          fail: failCount,
-        },
-      };
-    } catch (e) {
-      this.logger.error(
-        `INTERNAL_SERVER_ERROR: \n IP: ${ip} \n respCode: ${HttpStatus.INTERNAL_SERVER_ERROR} \n Error message: ${e}`
-      );
-      return {
-        respCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: "INTERNAL_SERVER_ERROR ",
-      };
-    }
-  }
-
-  @Get("count")
-  @UseGuards(AuthGuard)
-  async countdoucment(@Req() req: Request) {
-    const ip =
-      req.headers["x-forwarded-for"] ||
-      req.connection.remoteAddress ||
-      req.socket.remoteAddress ||
-      (req.connection as any).socket.remoteAddress;
-    try {
-      const res = await prisma.pGT_title_Project.findMany({});
-
-      const pendingCount = res.filter(
-        (record) => record.sentTransferSlip === "pending"
-      ).length;
-      const waitingCount = res.filter(
-        (record) => record.sentTransferSlip === "waiting"
-      ).length;
-      const approvedCount = res.filter(
-        (record) => record.sentTransferSlip === "approved"
-      ).length;
-      const failCount = res.filter(
-        (record) => record.sentTransferSlip === "fail"
-      ).length;
-
-      return {
-        status: HttpStatus.OK,
-        success: true,
-        message:
-          "The request was successful and the server has returned the requested data",
-        counts: {
-          pending: pendingCount,
-          waiting: waitingCount,
-          approved: approvedCount,
-          fail: failCount,
-        },
-      };
-    } catch (e) {
-      this.logger.error(
-        `INTERNAL_SERVER_ERROR: \n IP: ${ip} \n respCode: ${HttpStatus.INTERNAL_SERVER_ERROR} \n Error message: ${e}`
-      );
-      return {
-        respCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: "INTERNAL_SERVER_ERROR ",
-      };
-    }
-  }
-
-  @Get("list/status/:statu")
-  @UseGuards(AuthGuard)
-  async liststatus(@Param("statu") statu: string, @Req() req: Request) {
-    const ip =
-      req.headers["x-forwarded-for"] ||
-      req.connection.remoteAddress ||
-      req.socket.remoteAddress ||
-      (req.connection as any).socket.remoteAddress;
-    try {
-      const res = await prisma.pGT_title_Project.findMany({
-        where: {
-          sentTransferSlip: statu,
-        },
-        include: {
-          pgt_register_project: {
-            select: {
-              price_regi: true,
-              title: true,
-            },
-          },
-
-          pgt_user: {
-            select: {
-              prefix: true,
-              role: true,
-              fnameTh: true,
-              lnameTh: true,
-              email: true,
-              address: true,
-              parish: true,
-              district: true,
-              ethnicity: true,
-              county: true,
-              zipcode: true,
-              idCard: true,
-              phone: true,
-              PGT_Send_Receipt: true,
-            },
-          },
-        },
-        orderBy: {
-          titleId: "desc",
-        },
-      });
-
-      if (res) {
-        return {
-          respCode: HttpStatus.OK,
-          success: true,
-          results: res,
-          message:
-            "The request was successful and the server has returned the requested data",
-        };
+      if (!projectData.data) {
+        throw new Error('Data is required');
       }
-    } catch (e) {
-      this.logger.error(
-        `INTERNAL_SERVER_ERROR: \n IP: ${ip} \n respCode: ${HttpStatus.INTERNAL_SERVER_ERROR} \n Error message: ${e}`
-      );
-      return {
-        respCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: "INTERNAL_SERVER_ERROR ",
+
+      // 2) Helper converters
+      const toInt = (v: unknown, field = 'number') => {
+        const n = Number(v);
+        if (!Number.isFinite(n)) throw new Error(`Invalid ${field}: ${v}`);
+        return Math.trunc(n);
       };
-    }
-  }
 
-  @Get("select/list/project")
-  @UseGuards(AuthGuard)
-  async listproject(@Req() req: Request) {
-    const ip =
-      req.headers["x-forwarded-for"] ||
-      req.connection.remoteAddress ||
-      req.socket.remoteAddress ||
-      (req.connection as any).socket.remoteAddress;
-    try {
-      const res = await prisma.pGT_Register_Project.findMany({
-        select: {
-          id: true,
-          title: true,
-        },
-      });
+      const toDate = (v: unknown, field = 'date') => {
+        const d = new Date(String(v));
+        if (Number.isNaN(d.getTime()))
+          throw new Error(`Invalid ${field}: ${v}`);
+        return d;
+      };
 
-      if (res) {
-        return {
-          respCode: HttpStatus.OK,
-          success: true,
-          results: res,
-          message:
-            "The request was successful and the server has returned the requested data",
-        };
+      const toStr = (v: unknown, field = 'string') => {
+        const s = String(v ?? '').trim();
+        if (!s) throw new Error(`Invalid ${field}`);
+        return s;
+      };
+
+      // 3) Validate base fields
+      const id = toInt(projectData.data.id ?? 0, 'id');
+      const title = toStr(projectData.data.title, 'title');
+      const subtitle = toStr(projectData.data.subtitle, 'subtitle');
+      const detail = toStr(projectData.data.detail, 'detail');
+      const image = toStr(projectData.data.image, 'image');
+      const open_regi = toDate(projectData.data.open_regi, 'open_regi');
+      const close_regi = toDate(projectData.data.close_regi, 'close_regi');
+
+      if (close_regi <= open_regi) {
+        throw new Error('วันปิดรับสมัครต้องหลังวันเปิดรับสมัคร');
       }
-    } catch (e) {
-      this.logger.error(
-        `INTERNAL_SERVER_ERROR: \n IP: ${ip} \n respCode: ${HttpStatus.INTERNAL_SERVER_ERROR} \n Error message: ${e}`
-      );
-      return {
-        respCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: "INTERNAL_SERVER_ERROR ",
-      };
-    }
-  }
 
-  @Post("regi/prj")
-  @UseGuards(AuthGuard)
-  async prj(@Body() project: DataProject, @Req() req: Request) {
-    const ip =
-      req.headers["x-forwarded-for"] ||
-      req.connection.remoteAddress ||
-      req.socket.remoteAddress ||
-      (req.connection as any).socket.remoteAddress;
-    try {
-      const check = await prisma.pGT_title_Project.findFirst({
-        where: {
-          userId: project.codeId,
-          titleId: project.titleId,
-        },
-      });
+      // 4) Validate activities
+      const activitiesRaw = projectData.data.activities;
+      if (!Array.isArray(activitiesRaw) || activitiesRaw.length === 0) {
+        throw new Error('activities is required (at least 1 activity)');
+      }
 
-      if (check) {
-        return {
-          success: false,
-          respCode: HttpStatus.CONFLICT,
-          message: "This project information is already available.",
-        };
-      } else {
-        const res = await prisma.pGT_title_Project.create({
-          data: {
-            userId: project.codeId,
-            titleId: project.titleId,
-            createdAt: new Date(now()),
-            autodate_cancel: new Date(Date.now() + 24 * 60 * 60 * 1000),
-          },
-        });
+      const allowedTypes = new Set(['LECTURE', 'LAB', 'WORKSHOP']);
+      const seenType = new Set<string>();
 
-        if (res) {
-          const user = await prisma.pGT_title_Project.findFirst({
-            where: {
-              userId: project.codeId,
-              titleId: project.titleId,
-            },
-            select: {
-              userId: true,
-              titleId: true,
-              createdAt: true,
-              pgt_user: {
-                select: {
-                  prefix: true,
-                  fnameTh: true,
-                  lnameTh: true,
-                  role: true,
-                  email: true,
-                },
-              },
-              pgt_register_project: {
-                select: {
-                  title: true,
-                  detail: true,
-                  price_regi: true,
-                },
-              },
-            },
-          });
+      const activities = activitiesRaw.map((a: any, idx: number) => {
+        const type = String(a?.type ?? '')
+          .trim()
+          .toUpperCase();
 
-          if (user) {
-            //  Ex. Email
-            const email = user.pgt_user.email;
-            const subject = `ท่านได้ลงทะเบียนเข้าร่วม ${user.pgt_register_project.title}`;
-            const message = `
-          เรียน: ${user.pgt_user.fnameTh} ${user.pgt_user.lnameTh} <br><br>
-
-         
-          <b style="font-size: 22px; color: blue;">สมัครเข้าร่วมโครงการสำเร็จ</b> <br><br>
-          <b>รหัสสมาชิกคือ:</b> <span>${user.userId}</span> <br>
-          <b>Role:</b> <span>${user.pgt_user.role}</span> <br><br>
-
-          <b>ชื่อโครงการ:</b> <span>${
-            user.pgt_register_project.title
-          }</span> <br>
-          <b>อัตราค่าลงทะเบียน:</b> <span>${
-            user.pgt_register_project.price_regi
-          }</span> <br>
-          <b>เวลาที่สมัคร:</b> <span>${user.createdAt.toLocaleString()}</span> <br><br>
-
-          <b>*กรุณาแนบสลิปเงินโอน:</b> <span style="color: red;">กรุณาแนบสลิปเงินโอนภายใน 24 ชั่วโมง หากเลยเวลาที่กำหนด ระบบจะทำการ ยกเลิกโครงการของท่าน </span> <br>
-          <hr><br>
-
-          [รายละเอียดติดต่อ]<br>
-          <b>Email: </b> <span>pgt.cmu@gmail.com</span><br>
-          <b>Phone: </b> <span>+66 5394 8114</span>
-
-          `;
-            await this.emailService.sendEmail(email, subject, message);
-            return {
-              respCode: HttpStatus.CREATED,
-              success: true,
-              message:
-                "The request was successful and a new resource has been created",
-            };
-          }
+        if (!allowedTypes.has(type)) {
+          throw new Error(`Invalid activity type at index ${idx}: ${a?.type}`);
         }
-      }
-    } catch (e) {
-      this.logger.error(
-        `INTERNAL_SERVER_ERROR: \n IP: ${ip} \n respCode: ${HttpStatus.INTERNAL_SERVER_ERROR} \n Error message: ${e}`
-      );
+        if (seenType.has(type)) {
+          throw new Error(`Duplicate activity type not allowed: ${type}`);
+        }
+        seenType.add(type);
+
+        const capacity = toInt(a?.capacity, `activities[${idx}].capacity`);
+        const earlyPrice = toInt(
+          a?.earlyPrice,
+          `activities[${idx}].earlyPrice`,
+        );
+        const regularPrice = toInt(
+          a?.regularPrice,
+          `activities[${idx}].regularPrice`,
+        );
+
+        if (capacity <= 0)
+          throw new Error(`capacity must be > 0 at index ${idx}`);
+        if (earlyPrice < 0)
+          throw new Error(`earlyPrice must be >= 0 at index ${idx}`);
+        if (regularPrice < 0)
+          throw new Error(`regularPrice must be >= 0 at index ${idx}`);
+
+        // optional: early <= regular (แนะนำ)
+        if (earlyPrice > regularPrice) {
+          throw new Error(`earlyPrice must be <= regularPrice at index ${idx}`);
+        }
+
+        return { type, capacity, earlyPrice, regularPrice };
+      });
+
+      // 5) Upsert Project + Replace Activities in a Transaction
+      const result = await prisma.$transaction(async (tx) => {
+        const project = await tx.pGT_Register_Project.upsert({
+          where: { id: id || 0 },
+          update: {
+            title,
+            subtitle,
+            detail,
+            image,
+            open_regi,
+            close_regi,
+            updatedAt: new Date(),
+          },
+          create: {
+            title,
+            subtitle,
+            detail,
+            image,
+            count_regi: 0,
+            price_regi: 0,
+            discount: '0',
+            open_regi,
+            close_regi,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        });
+
+        // ลบทิ้งแล้วสร้างใหม่ (ง่ายและกันปัญหา unique)
+        await tx.pGT_Project_Activity.deleteMany({
+          where: { projectId: project.id },
+        });
+
+        await tx.pGT_Project_Activity.createMany({
+          data: activities.map((a: any) => ({
+            projectId: project.id,
+            type: a.type, // ต้องตรง enum ใน Prisma
+            capacity: a.capacity,
+            earlyPrice: a.earlyPrice,
+            regularPrice: a.regularPrice,
+          })),
+        });
+      });
+
+      console.log(`[${nowThai}] [Register] SUCCESS | IP: ${finalIp}`);
       return {
-        respCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: "INTERNAL_SERVER_ERROR ",
+        statusCode: HttpStatus.OK,
+        success: true,
+        message:
+          'The request was successful and the server has returned the requested data',
+      };
+    } catch (error) {
+      console.error(`[Register] ERROR | ${error.message}`);
+      return {
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        success: false,
+        message: error.message,
       };
     }
   }
 
-  @Post("upload/slip/user")
+  @Delete('manage/delete')
+  @RateLimit(60, 10)
+  @UseGuards(AuthGuard)
+  async deleteProject(@Query('data') data: string, @Req() req: Request) {
+    const finalIp =
+      req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    const nowThai = new Date().toLocaleString('th-TH', {
+      timeZone: 'Asia/Bangkok',
+    });
+
+    try {
+      LoggerService.log(`[${nowThai}] [Delete Project] START | IP: ${finalIp}`);
+
+      if (!data) {
+        throw new Error('Missing query param: data');
+      }
+
+      // 1) decrypt email
+      const cipherText = decodeURIComponent(data);
+      const bytes = CryptoJs.AES.decrypt(cipherText, this.secretKeyDashboard);
+      const decryptedData = bytes.toString(CryptoJs.enc.Utf8);
+
+      if (!decryptedData) {
+        throw new Error(
+          'Decrypt failed: empty plaintext. Check secret or encoding.',
+        );
+      }
+
+      const dataDecode = JSON.parse(decryptedData);
+
+      if (!dataDecode.email) {
+        throw new Error('Email is required');
+      }
+      if (!Number(dataDecode.id)) {
+        throw new Error('ID is required');
+      }
+
+      // 2) check email
+      const user = await prisma.cmuItAccount.findUnique({
+        where: { email: dataDecode.email },
+      });
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      // 2) delete activities
+      const activities = await prisma.pGT_Project_Activity.deleteMany({
+        where: { projectId: Number(dataDecode.id) },
+      });
+
+      if (!activities) {
+        throw new Error('Activities not found');
+      }
+
+      // 3) delete project
+      await prisma.pGT_Register_Project.delete({
+        where: { id: Number(dataDecode.id) },
+      });
+
+      LoggerService.log(
+        `[${nowThai}] [Delete Project] SUCCESS | IP: ${finalIp} | User: ${user.email} | ID: ${dataDecode.id}`,
+      );
+
+      return {
+        statusCode: HttpStatus.OK,
+        success: true,
+        message:
+          'The request was successful and the server has returned the requested data',
+      };
+    } catch (error) {
+      console.error(`[Delete Project] ERROR | ${error.message}`);
+      return {
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        success: false,
+        message: error.message,
+      };
+    }
+  }
+
+  @Get('manage/list')
+  @RateLimit(60, 10)
+  @UseGuards(AuthGuard)
+  async listProjects(@Query('data') data: string, @Req() req: Request) {
+    const finalIp =
+      req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    const nowThai = new Date().toLocaleString('th-TH', {
+      timeZone: 'Asia/Bangkok',
+    });
+
+    try {
+      console.log(`[${nowThai}] [Project List] START | IP: ${finalIp}`);
+
+      if (!data) {
+        throw new Error('Missing query param: data');
+      }
+
+      // 1) decrypt email
+      const cipherText = decodeURIComponent(data);
+      const bytes = CryptoJs.AES.decrypt(cipherText, this.secretKeyDashboard);
+      const decryptedEmail = bytes.toString(CryptoJs.enc.Utf8);
+
+      if (!decryptedEmail) {
+        throw new Error(
+          'Decrypt failed: empty plaintext. Check secret or encoding.',
+        );
+      }
+
+      const email = decryptedEmail.trim();
+      if (!email) {
+        throw new Error('Email is required');
+      }
+
+      // 2) check email in account table
+      const check_email = await prisma.cmuItAccount.findFirst({
+        where: { email },
+        select: { email: true },
+      });
+
+      if (!check_email) {
+        throw new Error('Email not found');
+      }
+
+      // 3) fetch projects + include activities
+      const res = await prisma.pGT_Register_Project.findMany({
+        include: {
+          pgtProjectRegistrations: true,
+          pgtProjectActivities: true,
+        },
+        orderBy: { close_regi: 'desc' },
+      } as any);
+
+      console.log(`[${nowThai}] [Project List] SUCCESS | IP: ${finalIp}`);
+
+      return {
+        statusCode: HttpStatus.OK,
+        success: true,
+        message:
+          'The request was successful and the server has returned the requested data',
+        results: res ?? [],
+      };
+    } catch (e) {
+      return {
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: 'INTERNAL_SERVER_ERROR ',
+      };
+    }
+  }
+
+  @Post('register')
+  @RateLimit(60, 10)
   @UseGuards(AuthGuard)
   @UseInterceptors(
-    FileInterceptor("myFile", {
+    FileInterceptor('file', {
       storage: diskStorage({
-        destination: "./upload/PGT/Slip",
-        filename: (req, file, callback) => {
-          const date = new Date();
-          const formattedDate = `${date.getFullYear()}${(date.getMonth() + 1)
-            .toString()
-            .padStart(2, "0")}${date.getDate().toString().padStart(2, "0")}`; // Format as YYYYMMDD
-          const randomName = Array(32)
-            .fill(null)
-            .map(() => Math.round(Math.random() * 16).toString(16))
-            .join("");
-          const newFilename = `${formattedDate}_${randomName}${extname(
-            file.originalname
-          )}`;
-          callback(null, newFilename);
+        destination: (req, file, cb) => {
+          const TMP_DIR = path.join(process.cwd(), 'upload', 'tmp');
+          fs.mkdirSync(TMP_DIR, { recursive: true });
+          cb(null, TMP_DIR);
+        },
+        filename: (req, file, cb) => {
+          // ตั้งชื่อไฟล์ใหม่ให้ไม่ชนกัน + ปลอดภัยขึ้น
+          const ext = path.extname(file.originalname || '').toLowerCase();
+          const name = path.basename(file.originalname || '').replace(ext, '');
+          const unique = `${name}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+          cb(null, `${unique}${ext}`);
         },
       }),
-      limits: {
-        fileSize: 10 * 1024 * 1024, // 10 MB
+
+      // จำกัดขนาดไฟล์ (ปรับได้)
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+      // filter ประเภทไฟล์ (ปรับตามที่ต้องการ)
+      fileFilter: (req, file, cb) => {
+        const allowed = ['image/jpeg', 'image/png', 'application/pdf'];
+        if (allowed.includes(file.mimetype)) return cb(null, true);
+        cb(new Error('Invalid file type'), false);
       },
-    })
+    }),
   )
-  async useruploadslip(
-    @Body() body: { userId: number; oldslip?: string },
+  async registerProject(
     @UploadedFile() file: Express.Multer.File,
-    @Req() req: Request
+    @Body() body: { encryptedData: string },
+    @Req() req: Request,
   ) {
-    const ip =
-      req.headers["x-forwarded-for"] ||
-      req.connection.remoteAddress ||
-      req.socket.remoteAddress ||
-      (req.connection as any).socket.remoteAddress;
-
+    const FINAL_DIR = path.join(process.cwd(), 'upload', 'PGT', 'Slip');
     try {
-      if (body.oldslip && body.userId && file.filename) {
-        const banner = await prisma.pGT_title_Project.findFirst({
-          where: {
-            transferSlip: body.oldslip,
-            id: Number(body.userId),
-          },
-        });
+      const finalIp =
+        (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress;
 
-        if (banner) {
-          try {
-            await fs.promises.unlink(
-              "./upload/PGT/Slip/" + banner.transferSlip
-            );
-          } catch (err) {
-            this.logger.error(`Failed to delete old slip: ${err}`);
-            return {
-              respCode: HttpStatus.ACCEPTED,
-              success: false,
-              message:
-                "The request has been accepted for processing, but the processing is not yet complete.",
-            };
-          }
+      const nowThai = new Date().toLocaleString('th-TH', {
+        timeZone: 'Asia/Bangkok',
+      });
 
-          const res = await prisma.pGT_title_Project.update({
-            where: {
-              id: Number(body.userId),
-            },
-            data: {
-              transferSlip: file.filename,
-              sentTransferSlip: "waiting",
-              W_updatedAt: new Date(),
-              F_updatedAt: null,
-              remaker: null,
-              autodate_cancel: null,
-            },
-          });
+      console.log(`[${nowThai}] [Register Project] START | IP: ${finalIp}`);
 
-          if (res) {
-            return {
-              respCode: HttpStatus.CREATED,
-              success: true,
-              message:
-                "The request was successful and a new resource has been created",
-            };
-          }
-        }
-      } else if (body.userId && file.filename) {
-        const res = await prisma.pGT_title_Project.update({
-          where: {
-            id: Number(body.userId),
-          },
-          data: {
-            transferSlip: file.filename,
-            sentTransferSlip: "waiting",
-            W_updatedAt: new Date(),
-            autodate_cancel: null,
-          },
-        });
-
-        if (res) {
-          return {
-            respCode: HttpStatus.CREATED,
-            success: true,
-            message:
-              "The request was successful and a new resource has been created",
-          };
-        }
-      }
-    } catch (e) {
-      this.logger.error(
-        `INTERNAL_SERVER_ERROR: \n IP: ${ip} \n respCode: ${HttpStatus.INTERNAL_SERVER_ERROR} \n Error message: ${e}`
+      const dataBytes = CryptoJs.AES.decrypt(
+        body.encryptedData,
+        this.secretKey,
       );
-      return {
-        respCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: "INTERNAL_SERVER_ERROR",
-      };
-    }
-  }
+      const decryptedString = dataBytes.toString(CryptoJs.enc.Utf8);
 
-  @Post("add/send/receipt")
-  @UseGuards(AuthGuard)
-  async receipt(@Body() user: DataProject, @Req() req: Request) {
-    const ip =
-      req.headers["x-forwarded-for"] ||
-      req.connection.remoteAddress ||
-      req.socket.remoteAddress ||
-      (req.connection as any).socket.remoteAddress;
+      if (!decryptedString) {
+        throw new Error('Decryption failed');
+      }
 
-    try {
-      const checkData = await prisma.pGT_Send_Receipt.findFirst({
+      const dataDecode = JSON.parse(decryptedString);
+      const decodedData = JSON.parse(dataDecode);
+
+      // check codeId
+      const checkCodeId = await prisma.pGT_User.findFirst({
         where: {
-          userId: user.userId,
-          titleId: Number(user.titleId),
+          codeId: decodedData.userId,
+        },
+        select: {
+          codeId: true,
+          email: true,
+          fnameTh: true,
+          lnameTh: true,
+          phone: true,
         },
       });
 
-      if (checkData) {
-        return {
-          respCode: HttpStatus.CONFLICT,
-          success: false,
-          message: "Duplicate resources are created.",
-        };
-      } else {
-        const res = await prisma.pGT_Send_Receipt.create({
-          data: {
-            userId: user.userId,
-            titleId: user.titleId,
-            dateSend: new Date().toLocaleDateString(),
-            timeSend: new Date().toLocaleTimeString(),
-          },
-        });
-
-        if (res) {
-          return {
-            respCode: HttpStatus.CREATED,
-            success: true,
-            message:
-              "The request was successful and a new resource has been created.",
-          };
-        }
+      // check codeId ไม่ถูกต้อง
+      if (!checkCodeId) {
+        throw new Error('codeId not found');
       }
-    } catch (e) {
-      this.logger.error(
-        `INTERNAL_SERVER_ERROR: \n IP: ${ip} \n respCode: ${HttpStatus.INTERNAL_SERVER_ERROR} \n Error message: ${e}`
-      );
-      return {
-        respCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: "INTERNAL_SERVER_ERROR",
-      };
-    }
-  }
 
-  @Delete("delect/prj/:userId/:id")
-  @UseGuards(AuthGuard)
-  async delect(
-    @Param("userId") userId: string,
-    @Param("id") id: number,
-    @Req() req: Request
-  ) {
-    const ip =
-      req.headers["x-forwarded-for"] ||
-      req.connection.remoteAddress ||
-      req.socket.remoteAddress ||
-      (req.connection as any).socket.remoteAddress;
-    try {
-      const res = await prisma.pGT_title_Project.delete({
+      const reCheckRegister = await prisma.pGT_Project_Registration.findFirst({
         where: {
-          id: Number(id),
-          userId: userId,
+          userId: decodedData.userId,
+          projectId: Number(decodedData.projectId),
         },
       });
 
-      if (res) {
-        this.logger.log(
-          `Successful Delect: \n IP: ${ip} \n respCode: ${HttpStatus.OK} \n Code: ${userId}`
+      if (reCheckRegister) {
+        console.log(
+          `[${nowThai}] [Register Project] You have already registered for this project | IP: ${finalIp}`,
         );
-        return {
-          respCode: HttpStatus.OK,
-          success: true,
-          message:
-            "The request was successful and the server has returned the requested data",
-        };
-      }
-    } catch (e) {
-      this.logger.error(
-        `INTERNAL_SERVER_ERROR: \n IP: ${ip} \n respCode: ${HttpStatus.INTERNAL_SERVER_ERROR} \n Error message: ${e}`
-      );
-      return {
-        respCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: "INTERNAL_SERVER_ERROR ",
-      };
-    }
-  }
-
-  @Put("update/status/transfer")
-  @UseGuards(AuthGuard)
-  async statustransfer(@Body() transfer: any, @Req() req: Request) {
-    const ip =
-      req.headers["x-forwarded-for"] ||
-      req.connection.remoteAddress ||
-      req.socket.remoteAddress ||
-      (req.connection as any).socket.remoteAddress;
-    try {
-      if (transfer.sentTransferSlip === "fail") {
-        const res = await prisma.pGT_title_Project.updateMany({
-          where: {
-            userId: transfer.userId.toString(),
-            titleId: Number(transfer.titleId),
-          },
-          data: {
-            sentTransferSlip: transfer.sentTransferSlip,
-            F_updatedAt: new Date(transfer.newdate),
-            remaker: transfer.remark,
-          },
-        });
-
-        if (res) {
-          const user = await prisma.pGT_title_Project.findFirst({
-            where: {
-              userId: transfer.userId.toString(),
-              titleId: Number(transfer.titleId),
-            },
-            select: {
-              userId: true,
-              titleId: true,
-              remaker: true,
-              pgt_user: {
-                select: {
-                  prefix: true,
-                  fnameTh: true,
-                  lnameTh: true,
-                  role: true,
-                  email: true,
-                },
-              },
-              pgt_register_project: {
-                select: {
-                  title: true,
-                },
-              },
-            },
-          });
-
-          //  Ex. Email
-          const email = user.pgt_user.email;
-          const subject =
-            "ชำระเงินค่าลงทะเบียนไม่สำเร็จ ศูนย์การศึกษาระดับบัณฑิตศึกษา คณะสัตวแพทยศาสตร์ มหาวิทยาลัยเชียงใหม่";
-          const message = `
-          เรียน: ${user.pgt_user.fnameTh} ${user.pgt_user.lnameTh} <br><br>
-
-          <b style="font-size: 24px;">${user.pgt_register_project.title}</b> <br>
-          <b style="font-size: 20px; color: red;">ชำระเงินค่าลงทะเบียนไม่สำเร็จ</b> <br><br>
-          <b>รหัสสมาชิกคือ:</b> <span>${user.userId}</span> <br>
-          <b>Role:</b> <span>${user.pgt_user.role}</span> <br><br>
-          <b>หมายเหตุ:</b> <span style="color: red;">${user.remaker}</span> <br>
-          <hr><br>
-
-          [รายละเอียดติดต่อ]<br>
-          <b>Email: </b> <span>pgt.cmu@gmail.com</span><br>
-          <b>Phone: </b> <span>+66 5394 8114</span>
-
-          `;
-          await this.emailService.sendEmail(email, subject, message);
-
-          return {
-            respCode: HttpStatus.CREATED,
-            success: true,
-            message:
-              "The request was successful and a new resource has been updated",
-          };
-        }
+        throw new Error('You have already registered for this project');
       }
 
-      if (transfer.sentTransferSlip === "approved") {
-        const res = await prisma.pGT_title_Project.updateMany({
-          where: {
-            userId: transfer.userId.toString(),
-            titleId: Number(transfer.titleId),
-          },
-          data: {
-            sentTransferSlip: transfer.sentTransferSlip,
-            S_updatedAt: new Date(transfer.newdate),
-          },
-        });
-
-        if (res) {
-          const user = await prisma.pGT_title_Project.findFirst({
-            where: {
-              userId: transfer.userId.toString(),
-              titleId: Number(transfer.titleId),
-            },
-            select: {
-              userId: true,
-              titleId: true,
-              pgt_user: {
-                select: {
-                  prefix: true,
-                  fnameTh: true,
-                  lnameTh: true,
-                  role: true,
-                  email: true,
-                },
-              },
-              pgt_register_project: {
-                select: {
-                  title: true,
-                },
-              },
-            },
-          });
-
-          //  Ex. Email
-          const email = user.pgt_user.email;
-          const subject =
-            "ยืนยันการตรวจสอบสลิปการโอนเงินสำเร็จ (ศูนย์การศึกษาระดับบัณฑิตศึกษา คณะสัตวแพทยศาสตร์ มหาวิทยาลัยเชียงใหม่)";
-          const message = `
-            เรียน: ${user.pgt_user.fnameTh} ${user.pgt_user.lnameTh} <br><br>
-
-            <b style="font-size: 24px;">${user.pgt_register_project.title}</b> <br>
-            <b style="font-size: 20px; color: blue;">ชำระเงินค่าลงทะเบียนสำเร็จ</b> <br>
-            <b>รหัสสมาชิกคือ:</b> <span>${user.userId}</span> <br>
-            <b>Role:</b> <span>${user.pgt_user.role}</span> <br>
-            <hr><br>
-
-            [รายละเอียดติดต่อ]<br>
-            <b>Email: </b> <span>pgt.cmu@gmail.com</span><br>
-            <b>Phone: </b> <span>+66 5394 8114</span>
-            `;
-
-          await this.emailService.sendEmail(email, subject, message);
-
-          return {
-            respCode: HttpStatus.CREATED,
-            success: true,
-            message:
-              "The request was successful and a new resource has been updated",
-          };
-        }
-      }
-
-      if (transfer.sentTransferSlip === "waiting") {
-        const res = await prisma.pGT_title_Project.updateMany({
-          where: {
-            userId: transfer.userId.toString(),
-            titleId: Number(transfer.titleId),
-          },
-          data: {
-            sentTransferSlip: transfer.sentTransferSlip,
-            S_updatedAt: null,
-            F_updatedAt: null,
-            remaker: null,
-          },
-        });
-
-        if (res) {
-          return {
-            respCode: HttpStatus.CREATED,
-            success: true,
-            message:
-              "The request was successful and a new resource has been updated",
-          };
-        }
-      }
-    } catch (e) {
-      this.logger.error(
-        `INTERNAL_SERVER_ERROR: \n IP: ${ip} \n respCode: ${HttpStatus.INTERNAL_SERVER_ERROR} \n Error message: ${e}`
-      );
-      return {
-        respCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: "INTERNAL_SERVER_ERROR ",
-      };
-    }
-  }
-
-  @Get("list/titleId/:status/:id")
-  @UseGuards(AuthGuard)
-  async listtiile(@Param("id") id: number, @Param("status") status: string) {
-    try {
-      const res = await prisma.pGT_title_Project.findMany({
-        where: {
-          titleId: Number(id),
-          sentTransferSlip: status,
-        },
-        include: {
-          pgt_register_project: {
-            select: {
-              price_regi: true,
-              title: true,
-            },
-          },
-          pgt_user: {
-            select: {
-              prefix: true,
-              role: true,
-              fnameTh: true,
-              lnameTh: true,
-              email: true,
-              address: true,
-              parish: true,
-              district: true,
-              ethnicity: true,
-              county: true,
-              zipcode: true,
-              idCard: true,
-              phone: true,
-              PGT_Send_Receipt: true,
-            },
-          },
-        },
-        orderBy: {
-          titleId: "desc",
+      const res = await prisma.pGT_Project_Registration.create({
+        data: {
+          projectId: Number(decodedData.projectId),
+          userId: decodedData.userId,
+          totalAmount: Number(decodedData.price),
+          discountAmount: 0,
+          pricingTier: decodedData.pricingTier,
+          packageName: decodedData.activityType,
+          paymentStatus: 'PENDING',
+          transferSlipUrl: file?.filename,
+          transferSlipStatus: 'APPROVED',
+          paidAt: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          cancelledAt: null,
         },
       });
 
-      if (res.length > 0) {
-        return {
-          respCode: HttpStatus.OK,
-          success: true,
-          results: res,
-          message:
-            "The request was successful and the server has returned the requested data",
-        };
-      } else {
-        return {
-          respCode: HttpStatus.NOT_FOUND,
-          success: false,
-          message: "Not found data",
-        };
+      const title = await prisma.pGT_Register_Project.findFirst({
+        where: {
+          id: Number(decodedData.projectId),
+        },
+        select: {
+          title: true,
+        },
+      });
+
+      // file จะมีข้อมูลไฟล์ที่ถูกเซฟแล้ว (diskStorage)
+      // console.debug('file:', {
+      //   originalname: file?.originalname,
+      //   mimetype: file?.mimetype,
+      //   size: file?.size,
+      //   path: file?.path,
+      //   file: file,
+      //   destination: file?.destination,
+      // });
+
+      if (!res) {
+        throw new Error('Register project failed');
       }
-    } catch (e) {
-      console.log(e);
-      this.logger.error(
-        `INTERNAL_SERVER_ERROR:  \n respCode: ${HttpStatus.INTERNAL_SERVER_ERROR} \n Error message: ${e}`
+
+      // 2) ค่อยย้ายไฟล์ไปโฟลเดอร์จริง
+      fs.mkdirSync(FINAL_DIR, { recursive: true });
+      const finalPath = path.join(FINAL_DIR, file.filename);
+      await fsp.rename(file.path, finalPath);
+
+      // 3) ส่งอีเมลยืนยันการลงทะเบียน สําหรับผู้ลงทะเบียน
+      await this.emailService.sendTemplateEmail(
+        checkCodeId.email,
+        'confirm-register',
+        'สมัครเข้าร่วมโครงการสัมมนา ศูนย์การศึกษาระดับบัณฑิตศึกษา คณะสัตวแพทยศาสตร์ มหาวิทยาลัยเชียงใหม่',
+        {
+          fnameTh: checkCodeId.fnameTh,
+          lnameTh: checkCodeId.lnameTh,
+          codeId: checkCodeId.codeId,
+          email: checkCodeId.email,
+          projectName: title?.title,
+          year: new Date().getFullYear(),
+        },
       );
+
+      // 4) ส่งอีเมลยืนยันการลงทะเบียน สําหรับผู้ดูแล
+      const recipients = [
+        process.env.EMAIL_STAFF_FIN,
+        process.env.EMAIL_STAFF_ADMIN,
+      ].filter((x): x is string => Boolean(x));
+
+      await this.emailService.sendTemplateEmailAdmin(
+        recipients,
+        'alert-to-admin',
+        'มีผู้ลงทะเบียนใหม่ Postgraduate Education Center โปรดตรวจสอบ',
+        {
+          fnameTh: checkCodeId.fnameTh,
+          lnameTh: checkCodeId.lnameTh,
+          codeId: checkCodeId.codeId,
+          email: checkCodeId.email,
+          phone: checkCodeId.phone,
+          typeRegister: res.packageName,
+          pricingTier: res.pricingTier,
+          price: res.totalAmount,
+          projectName: title?.title,
+          dateRegister: res.createdAt.toLocaleDateString('th-TH', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: 'numeric',
+            second: 'numeric',
+          }),
+          year: new Date().getFullYear(),
+        },
+      );
+
+      console.log(`[${nowThai}] [Register Project] END | IP: ${finalIp}`);
       return {
-        respCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: "INTERNAL_SERVER_ERROR ",
+        statusCode: HttpStatus.OK,
+        message: 'Register project successfully',
+        success: true,
+      };
+    } catch (e) {
+      // ล้มเหลว → ลบ temp
+      if (file?.path) {
+        try {
+          await fsp.unlink(file.path);
+          LoggerService.log(`Delete temp file: ${file.path}`);
+        } catch {
+          // ignore
+        }
+      }
+      return {
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: {
+          messageCode: 'INTERNAL_SERVER_ERROR',
+          mgs: e.message,
+        },
+      };
+    }
+  }
+
+  @Get('list')
+  @RateLimit(60, 10)
+  async list(@Req() req: Request) {
+    const finalIp =
+      req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    const nowThai = new Date().toLocaleString('th-TH', {
+      timeZone: 'Asia/Bangkok',
+    });
+
+    try {
+      console.log(`[${nowThai}] [Project List] START | IP: ${finalIp}`);
+
+      const res = await prisma.pGT_Register_Project.findMany({
+        include: {
+          pgtProjectRegistrations: true,
+          pgtProjectActivities: true,
+        },
+        orderBy: { close_regi: 'desc' },
+      } as any);
+
+      console.log(`[${nowThai}] [Project List] SUCCESS | IP: ${finalIp}`);
+
+      return {
+        statusCode: HttpStatus.OK,
+        success: true,
+        message:
+          'The request was successful and the server has returned the requested data',
+        results: res ?? [],
+      };
+    } catch (e) {
+      console.log(`[${nowThai}] [Project List] FAILED | IP: ${finalIp}`);
+      return {
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: 'INTERNAL_SERVER_ERROR ',
+      };
+    }
+  }
+
+  @Get('user')
+  @RateLimit(60, 10)
+  @UseGuards(AuthGuard)
+  async userProject(@Query('data') data: string, @Req() req: Request) {
+    const finalIp =
+      req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    const nowThai = new Date().toLocaleString('th-TH', {
+      timeZone: 'Asia/Bangkok',
+    });
+    try {
+      console.log(`[${nowThai}] [User Project] START | IP: ${finalIp}`);
+
+      if (!data) {
+        throw new Error('Missing query param: data');
+      }
+
+      // 1) decrypt email
+      const cipherText = decodeURIComponent(data);
+      const bytes = CryptoJs.AES.decrypt(cipherText, this.secretKey);
+      const decryptedData = bytes.toString(CryptoJs.enc.Utf8);
+
+      if (!decryptedData) {
+        throw new Error('Decryption failed');
+      }
+
+      const dataDecode = JSON.parse(decryptedData);
+
+      const res = await prisma.pGT_User.findFirst({
+        where: { email: dataDecode.email, codeId: dataDecode.codeId },
+
+        select: {
+          codeId: true,
+          pdpa: true,
+          pgtProjectRegistrations: {
+            select: {
+              id: true,
+              totalAmount: true,
+              pricingTier: true,
+              paymentStatus: true,
+              transferSlipUrl: true,
+              transferSlipStatus: true,
+              createdAt: true,
+              project: {
+                select: {
+                  id: true,
+                  title: true,
+                  open_regi: true,
+                },
+              },
+            },
+            orderBy: { createdAt: 'desc' },
+          },
+        },
+      });
+
+      console.log(`[${nowThai}] [User Project] SUCCESS | IP: ${finalIp}`);
+
+      if (!res) {
+        throw new Error('User not found');
+      }
+
+      return {
+        statusCode: HttpStatus.OK,
+        success: true,
+        message:
+          'The request was successful and the server has returned the requested data',
+        results: res ?? [],
+      };
+    } catch (error) {
+      console.log(`[${nowThai}] [User Project] FAILED | IP: ${finalIp}`);
+      return {
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: 'INTERNAL_SERVER_ERROR ',
       };
     }
   }

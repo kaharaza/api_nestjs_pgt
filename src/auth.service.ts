@@ -5,20 +5,46 @@ import { JwtService } from '@nestjs/jwt';
 export class AuthService {
   constructor(private readonly jwtService: JwtService) {}
 
-  async validateUserById(userId: string) {
-    return null;
-  }
-
-
-
-  async loginPgt(pgt: any) {
+  async loginPgt(pgt: {
+    codeId: string;
+    email: string;
+    fnameEn: string;
+    lnameEn: string;
+    points: number;
+    cecode: string;
+    role: string;
+    foodtype: string;
+    sex: string;
+  }) {
     const payload = {
-      sub: pgt.id,
-      email: pgt.email,
-      fname: pgt.fname,
       codeId: pgt.codeId,
+      email: pgt.email,
+      fnameEn: pgt.fnameEn,
+      lnameEn: pgt.lnameEn,
+      points: pgt.points,
+      cecode: pgt.cecode,
+      role: pgt.role,
+      sex: pgt.sex,
+      foodtype: pgt.foodtype,
     };
 
+    const token = this.jwtService.sign(payload);
+
+    return {
+      access_token: token,
+    };
+  }
+
+  async loginAdminPgt(cmu: any) {
+    const payload = {
+      sub: cmu.id,
+      name: cmu.name,
+      email: cmu.cmuitaccount,
+      organization_code: cmu.organization_code,
+      itaccounttype_id: cmu.itaccounttype_id,
+      role: cmu.role,
+      permission: cmu.permission,
+    };
 
     return {
       access_token: this.jwtService.sign(payload),
@@ -35,7 +61,7 @@ export class AuthService {
     };
   }
 
-  async  loginUser(user: any) {
+  async loginUser(user: any) {
     const payload = {
       sub: user.id,
       fnameTh: user.fnameTh,
