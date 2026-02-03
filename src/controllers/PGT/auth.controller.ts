@@ -1,13 +1,16 @@
 import {
   Body,
   Controller,
+  Get,
   HttpException,
   HttpStatus,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { AuthCMUService } from 'src/auth.cmu.service';
 import { AuthService } from 'src/auth.service';
+import { AuthGuard } from 'src/service/auth.guard';
 
 const prisma = new PrismaClient();
 

@@ -19,8 +19,6 @@ import { Request } from 'express';
 import { LoggerService } from 'src/service/logger/logger.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { extname } from 'path';
-import { now } from 'moment-timezone';
 
 import * as path from 'path';
 import * as fs from 'fs';
@@ -30,9 +28,21 @@ import { EmailService } from 'src/email.service';
 import { LineNotifyService } from 'src/line.service';
 import { RateLimit } from 'src/middleware/rate-limit.decorator';
 import * as CryptoJs from 'crypto-js';
-import { PGTUserController } from './user.controller';
+
+import { useCheckEmailAdmin, useDecodecryptQuery } from 'src/utils/useCode';
 
 const prisma = new PrismaClient();
+
+const currentTimeTh = new Date().toLocaleString('th-TH', {
+  timeZone: 'Asia/Bangkok',
+  numberingSystem: 'latn',
+  hour12: false,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+});
 
 @Controller('api/pgt/project')
 export class PGTProjectController {
@@ -320,7 +330,9 @@ export class PGTProjectController {
     });
 
     try {
-      console.log(`[${nowThai}] [Project List] START | IP: ${finalIp}`);
+      console.info(
+        `[${nowThai}] [  Project Manage List] START | IP: ${finalIp}`,
+      );
 
       if (!data) {
         throw new Error('Missing query param: data');
@@ -358,10 +370,85 @@ export class PGTProjectController {
           pgtProjectRegistrations: true,
           pgtProjectActivities: true,
         },
+
         orderBy: { close_regi: 'desc' },
       } as any);
 
-      console.log(`[${nowThai}] [Project List] SUCCESS | IP: ${finalIp}`);
+      console.log(
+        `[${nowThai}] [Project Manage List] SUCCESS | IP: ${finalIp}`,
+      );
+
+      return {
+        statusCode: HttpStatus.OK,
+        success: true,
+        message:
+          'The request was successful and the server has returned the requested data',
+        results: res ?? [],
+      };
+    } catch (e) {
+      return {
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: 'INTERNAL_SERVER_ERROR ',
+      };
+    }
+  }
+
+  @Get('manage/list/sponser')
+  @RateLimit(60, 10)
+  @UseGuards(AuthGuard)
+  async listProjectsSponser(@Query('data') data: string, @Req() req: Request) {
+    const finalIp =
+      req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    const nowThai = new Date().toLocaleString('th-TH', {
+      timeZone: 'Asia/Bangkok',
+    });
+
+    try {
+      if (!data) {
+        throw new Error('Missing query param: data');
+      }
+
+      // 1) decrypt email
+      const cipherText = decodeURIComponent(data);
+      const bytes = CryptoJs.AES.decrypt(cipherText, this.secretKeyDashboard);
+      const decryptedEmail = bytes.toString(CryptoJs.enc.Utf8);
+
+      if (!decryptedEmail) {
+        throw new Error(
+          'Decrypt failed: empty plaintext. Check secret or encoding.',
+        );
+      }
+
+      const email = decryptedEmail.trim();
+      if (!email) {
+        throw new Error('Email is required');
+      }
+      console.log(`[${nowThai}] [Project Sponser List] START | IP: ${finalIp}`);
+      // 2) check email in account table
+      const check_email = await prisma.cmuItAccount.findFirst({
+        where: { email },
+        select: { email: true },
+      });
+
+      if (!check_email) {
+        throw new Error('Email not found');
+      }
+
+      // 3) fetch projects + include activities
+      const res = await prisma.pGT_Register_Project.findMany({
+        select: {
+          close_regi: true,
+          id: true,
+          open_regi: true,
+          title: true,
+          image: true,
+        },
+        orderBy: { close_regi: 'desc' },
+      });
+
+      console.log(
+        `[${nowThai}] [Project Sponser List] SUCCESS | IP: ${finalIp}`,
+      );
 
       return {
         statusCode: HttpStatus.OK,
@@ -599,8 +686,6 @@ export class PGTProjectController {
     });
 
     try {
-      console.log(`[${nowThai}] [Project List] START | IP: ${finalIp}`);
-
       const res = await prisma.pGT_Register_Project.findMany({
         include: {
           pgtProjectRegistrations: true,
@@ -609,7 +694,9 @@ export class PGTProjectController {
         orderBy: { close_regi: 'desc' },
       } as any);
 
-      console.log(`[${nowThai}] [Project List] SUCCESS | IP: ${finalIp}`);
+      console.log(
+        `[${nowThai}] | IP: ${finalIp} | ${req.method} |  [Project List] SUCCESS `,
+      );
 
       return {
         statusCode: HttpStatus.OK,
@@ -631,14 +718,18 @@ export class PGTProjectController {
   @RateLimit(60, 10)
   @UseGuards(AuthGuard)
   async userProject(@Query('data') data: string, @Req() req: Request) {
-    const finalIp =
-      req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    const finalIp = req.headers['x-forwarded-for'] || '127.0.0.1';
     const nowThai = new Date().toLocaleString('th-TH', {
       timeZone: 'Asia/Bangkok',
+      numberingSystem: 'latn',
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
     });
     try {
-      console.log(`[${nowThai}] [User Project] START | IP: ${finalIp}`);
-
       if (!data) {
         throw new Error('Missing query param: data');
       }
@@ -682,12 +773,12 @@ export class PGTProjectController {
         },
       });
 
-      console.log(`[${nowThai}] [User Project] SUCCESS | IP: ${finalIp}`);
-
       if (!res) {
         throw new Error('User not found');
       }
 
+      console.log(`[${nowThai}] [User Project] SUCCESS | IP: ${finalIp}`);
+      console.info();
       return {
         statusCode: HttpStatus.OK,
         success: true,
@@ -697,6 +788,144 @@ export class PGTProjectController {
       };
     } catch (error) {
       console.log(`[${nowThai}] [User Project] FAILED | IP: ${finalIp}`);
+      return {
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: 'INTERNAL_SERVER_ERROR ',
+      };
+    }
+  }
+
+  @Get('user/register')
+  @RateLimit(60, 10)
+  @UseGuards(AuthGuard)
+  async userRegisterProject(@Query('data') data: string, @Req() req: Request) {
+    let finalIp = req.headers['x-forwarded-for'] || '127.0.0.1';
+    let nowThai = new Date().toLocaleDateString('th-TH', {
+      timeZone: 'Asia/Bangkok',
+      numberingSystem: 'latn',
+    });
+    try {
+      if (!data) {
+        throw new Error('Missing query param: data');
+      }
+
+      const decode = useDecodecryptQuery(data, this.secretKeyDashboard);
+      const dataDecode = JSON.parse(decode);
+
+      const checkAdmin = await useCheckEmailAdmin(dataDecode.email);
+      if (!checkAdmin) {
+        throw new Error('Email ไม่ถูกต้อง');
+      }
+
+      const resp = await prisma.pGT_Project_Registration.findMany({
+        where: {
+          projectId: dataDecode.projectId,
+          transferSlipStatus: 'APPROVED',
+        },
+        select: {
+          userId: true,
+          totalAmount: true,
+          packageName: true,
+          pricingTier: true,
+          paymentStatus: true,
+          transferSlipStatus: true,
+          transferSlipUrl: true,
+          createdAt: true,
+          user: {
+            select: {
+              fnameTh: true,
+              lnameTh: true,
+              email: true,
+              phone: true,
+              address: true,
+              district: true,
+              county: true,
+              ethnicity: true,
+              zipcode: true,
+              parish: true,
+              certName: true,
+              foodtype: true,
+            },
+          },
+          project: {
+            select: {
+              id: true,
+              title: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      console.info(
+        `${nowThai} | ${finalIp} | ${req.url} | ${req.method} | [User Register Project] SUCCESS`,
+      );
+      return {
+        statusCode: HttpStatus.OK,
+        success: true,
+        message:
+          'The request was successful and the server has returned the requested data',
+        results: resp ?? [],
+      };
+    } catch (error) {
+      console.log(
+        `[${nowThai}] [User Register Project] FAILED | IP: ${finalIp}`,
+      );
+      return {
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: 'INTERNAL_SERVER_ERROR ',
+      };
+    }
+  }
+
+  @Put('admin/approve-slip')
+  @RateLimit(60, 10)
+  @UseGuards(AuthGuard)
+  async approveSlipProject(@Query('data') data: string, @Req() req: Request) {
+    let finalIp = req.headers['x-forwarded-for'] || '127.0.0.1';
+    let nowThai = currentTimeTh;
+    try {
+      if (!data) {
+        throw new Error('Missing query param: data');
+      }
+
+      const decode = useDecodecryptQuery(data, this.secretKeyDashboard);
+      const dataDecode = JSON.parse(decode);
+
+      const checkAdmin = await useCheckEmailAdmin(dataDecode.email);
+      if (!checkAdmin) {
+        throw new Error('Email ไม่ถูกต้อง');
+      }
+
+      const resp = await prisma.pGT_Project_Registration.updateMany({
+        where: {
+          userId: dataDecode.codeId,
+          projectId: dataDecode.projectId,
+          paymentStatus: dataDecode.patmentStatus,
+        },
+        data: {
+          paymentStatus:
+            dataDecode.transferStatus === true ? 'PAID' : 'PENDING',
+          updatedAt: new Date(),
+        },
+      });
+
+      if (!resp) {
+        throw new Error('ไม่พบข้อมูล');
+      }
+
+      console.info(
+        `${nowThai} | ${finalIp} | ${req.url} | ${req.method} | [Approve Slip Project] SUCCESS`,
+      );
+      return {
+        statusCode: HttpStatus.OK,
+        success: true,
+        message: 'Update slip status successfully',
+      };
+    } catch (error) {
+      console.log(
+        `${nowThai} | ${finalIp} | ${req.url} | ${req.method} | [Approve Slip Project] FAILED`,
+      );
       return {
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
         message: 'INTERNAL_SERVER_ERROR ',

@@ -13,27 +13,38 @@ import {
   Query,
 } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
-import { LoggerService } from 'src/service/logger/logger.service';
-import { JwtService } from '@nestjs/jwt';
 import { AuthService } from 'src/auth.service';
 import { Request } from 'express';
 import { EmailService } from 'src/email.service';
 import { AuthGuard } from 'src/service/auth.guard';
 import * as CryptoJs from 'crypto-js';
 import { RateLimit } from 'src/middleware/rate-limit.decorator';
+import { useCheckEmailAdmin } from 'src/utils/useCode';
 
 const prisma = new PrismaClient();
+
+const currentTime = new Date().toLocaleString('th-TH', {
+  timeZone: 'Asia/Bangkok',
+  hour12: false,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+});
 
 @Controller('api/pgt/user')
 export class PGTUserController {
   private secretKey: string;
   private secretPassKey: string;
+  private secretKeyDashbord: string;
   constructor(
     private readonly authService: AuthService,
     private readonly emailService: EmailService,
   ) {
     this.secretKey = process.env.CRYPTO_SECRET_KEY;
     this.secretPassKey = process.env.RESET_PASS_CRYPTO_SECRET_KEY;
+    this.secretKeyDashbord = process.env.DASHBOARD_PGT_CRYPTO_SECRET_KEY;
     if (!this.secretKey) {
       throw new Error(
         'CRYPTO_SECRET_KEY ไม่ได้ถูกกำหนดใน environment variables',
@@ -42,6 +53,11 @@ export class PGTUserController {
     if (!this.secretPassKey) {
       throw new Error(
         'CRYPTO_SECRET_PASS_KEY ไม่ได้ถูกกำหนดใน environment variables',
+      );
+    }
+    if (!this.secretKeyDashbord) {
+      throw new Error(
+        'CRYPTO_SECRET_KEY_DASHBOARD ไม่ได้ถูกกำหนดใน environment variables',
       );
     }
   }
@@ -92,12 +108,17 @@ export class PGTUserController {
       const check_email = await prisma.pGT_User.findFirst({
         where: {
           email: dataDecode.email,
-          cecode: dataDecode.licenseNumber,
+        },
+        select: {
+          email: true,
         },
       });
 
-      if (check_email) {
-        throw new Error('Email already exists');
+      if (check_email.email) {
+        return {
+          status: false,
+          message: 'Email already exists',
+        };
       }
 
       const randomCodeId = Math.floor(Math.random() * 1000000);
@@ -164,11 +185,11 @@ export class PGTUserController {
         message: 'Create user success',
       };
     } catch (error) {
-      console.error(`[Register] ERROR | ${error.message}`);
+      console.error(`[Register] ERROR | ${error.message} | IP: ${finalIp}`);
       return {
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
         success: false,
-        message: error.message,
+        message: 'INTERNAL_SERVER_ERROR',
       };
     }
   }
@@ -521,8 +542,6 @@ export class PGTUserController {
         };
       }
 
-      console.debug(data);
-
       const cipherText = decodeURIComponent(data);
       const bytes = CryptoJs.AES.decrypt(cipherText, this.secretKey);
       const decryptedString = bytes.toString(CryptoJs.enc.Utf8);
@@ -590,6 +609,202 @@ export class PGTUserController {
       };
     } catch (error) {
       console.error(`[Profile Edit] ERROR | ${error.message}`);
+      return {
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        success: false,
+        message: error.message,
+      };
+    }
+  }
+
+  @Get('profile/user')
+  @RateLimit(60, 10)
+  @UseGuards(AuthGuard)
+  async user(@Query('data') data: string, @Req() req: Request) {
+    const finalIp =
+      req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    const nowThai = new Date().toLocaleString('th-TH', {
+      timeZone: 'Asia/Bangkok',
+    });
+
+    try {
+      if (!data) {
+        return {
+          statusCode: HttpStatus.BAD_REQUEST,
+          success: false,
+          message: 'Missing data parameter',
+        };
+      }
+
+      const cipherText = decodeURIComponent(data);
+      const bytes = CryptoJs.AES.decrypt(cipherText, this.secretKeyDashbord);
+      const decryptedString = bytes.toString(CryptoJs.enc.Utf8);
+
+      if (!decryptedString) {
+        return {
+          statusCode: HttpStatus.BAD_REQUEST,
+          success: false,
+          message: 'Decryption failed',
+        };
+      }
+
+      const resp = await prisma.pGT_User.findMany({
+        select: {
+          id: true,
+          email: true,
+          fnameTh: true,
+          lnameTh: true,
+          codeId: true,
+        },
+      });
+
+      if (!resp) {
+        return {
+          statusCode: HttpStatus.BAD_REQUEST,
+          success: false,
+          message: 'Missing codeId parameter',
+          resuits: resp,
+        };
+      }
+      console.info(
+        `[${nowThai}] |IP: ${finalIp}| ${req.method} | ${req.url} | [Profile User] SUCCESS }`,
+      );
+      return {
+        statusCode: HttpStatus.OK,
+        success: true,
+        message: 'Get profile successfully',
+        data: resp,
+      };
+    } catch (error) {
+      console.error(`[Profile User] ERROR | ${error.message}`);
+      return {
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        success: false,
+        message: error.message,
+      };
+    }
+  }
+
+  @Get('admin/list')
+  @RateLimit(60, 10)
+  @UseGuards(AuthGuard)
+  async getAdminList(@Query('data') data: string, @Req() req: Request) {
+    const finalIp =
+      req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    const nowThai = new Date().toLocaleString('th-TH', {
+      timeZone: 'Asia/Bangkok',
+    });
+    try {
+      if (!data) {
+        throw new Error('Missing data parameter');
+      }
+
+      const cipherText = decodeURIComponent(data);
+      const bytes = CryptoJs.AES.decrypt(cipherText, this.secretKeyDashbord);
+      const decryptedString = bytes.toString(CryptoJs.enc.Utf8);
+
+      if (!decryptedString) {
+        throw new Error('Decryption failed');
+      }
+
+      const checkEmail = await useCheckEmailAdmin(decryptedString);
+      if (!checkEmail) {
+        throw new Error('Request not found');
+      }
+
+      if (checkEmail.id !== '7a4bcb16-b1d1-404d-b095-e602fb646a9e') {
+        throw new Error('User Permission Denied');
+      }
+
+      const resp = await prisma.cmuItAccount.findMany({
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          permissions: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      if (!resp) {
+        throw new Error('Request not found');
+      }
+
+      console.info(
+        `[${nowThai}] |IP: ${finalIp}| ${req.method} | ${req.url} | [Admin List] SUCCESS }`,
+      );
+      return {
+        statusCode: HttpStatus.OK,
+        success: true,
+        message: 'Get admin list successfully',
+        results: resp,
+      };
+
+      // const
+    } catch (error) {
+      console.error(`[Admin List] ERROR | ${error.message}`);
+      return {
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        success: false,
+        message: error.message,
+      };
+    }
+  }
+
+  @Put('admin/edit')
+  @RateLimit(60, 10)
+  @UseGuards(AuthGuard)
+  async editAdmin(@Query('data') data: string, @Req() req: Request) {
+    const finalIp = req.headers['x-forwarded-for'] || '127.0.0.0';
+    const nowThai = new Date().toLocaleString('th-TH', {
+      timeZone: 'Asia/Bangkok',
+    });
+    try {
+      if (!data) {
+        throw new Error('Missing data parameter');
+      }
+
+      const cipherText = decodeURIComponent(data);
+      const bytes = CryptoJs.AES.decrypt(cipherText, this.secretKeyDashbord);
+      const decryptedString = bytes.toString(CryptoJs.enc.Utf8);
+
+      if (!decryptedString) {
+        throw new Error('Decryption failed');
+      }
+
+      const decodeData = JSON.parse(decryptedString);
+
+      const resp = await prisma.cmuItAccount.update({
+        where: {
+          id: decodeData.id,
+        },
+        data: {
+          name: decodeData.name,
+          email: decodeData.email,
+          role: decodeData.role,
+          permissions: decodeData.permissions,
+        },
+      });
+
+      if (!resp) {
+        throw new Error('Request not found');
+      }
+
+      console.info(
+        `[${nowThai}] |IP: ${finalIp}| ${req.method} | ${req.url} | [Admin Edit] SUCCESS }`,
+      );
+
+      return {
+        statusCode: HttpStatus.OK,
+        success: true,
+        message: 'Edit admin successfully',
+      };
+    } catch (error) {
+      console.error(
+        `[${currentTime}] | ${finalIp} | ${req.method} | ${req.url} | ERROR | \n ${error.message}`,
+      );
       return {
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
         success: false,

@@ -19,6 +19,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthCMUService } from './auth.cmu.service';
 import { AuthController } from './controllers/PGT/auth.controller';
+import { PgtWsModule } from './ws/pgt-ws.module';
 
 dotenv.config();
 @Module({
@@ -66,6 +67,7 @@ dotenv.config();
       serveRoot: '/app/upload/PGT/Slip',
       exclude: ['/api*'],
     }),
+    PgtWsModule,
   ],
   controllers: [
     PGTStaffController,
@@ -81,6 +83,7 @@ dotenv.config();
     AuthCMUService,
     LineNotifyService,
     LoggerService,
+
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard, // เปิดใช้ guard ทั่วทั้งแอป
